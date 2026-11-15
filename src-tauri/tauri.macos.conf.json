@@ -1,7 +1,8 @@
 {
   "bundle": {
     "targets": [
-      "app"
+      "app",
+      "dmg"
     ],
     "resources": {
       "resources/wasabi-2.1": "wasabi-2.1"
