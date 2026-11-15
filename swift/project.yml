@@ -1,0 +1,119 @@
+name: Castle
+options:
+  deploymentTarget:
+    macOS: "14.0"
+  createIntermediateGroups: true
+targets:
+  Castle:
+    type: application
+    platform: macOS
+    sources:
+      - path: Castle
+    dependencies:
+      - target: CastleQuickLook
+      - target: CastleWidget
+    info:
+      path: Castle/Info.plist
+      properties:
+        CFBundleDisplayName: Castle
+        CFBundleShortVersionString: "1.0"
+        CFBundleVersion: "1"
+        LSApplicationCategoryType: public.app-category.board-games
+        LSMinimumSystemVersion: "14.0"
+        NSHumanReadableCopyright: "Castle"
+        CFBundleDocumentTypes:
+          - CFBundleTypeName: Portable Game Notation
+            CFBundleTypeRole: Viewer
+            LSHandlerRank: Alternate
+            LSItemContentTypes: [app.castle.pgn, com.apple.chess.pgn]
+        CFBundleURLTypes:
+          - CFBundleURLName: app.castle.Castle
+            CFBundleURLSchemes: [castle]
+        UTImportedTypeDeclarations:
+          - UTTypeIdentifier: app.castle.pgn
+            UTTypeDescription: Portable Game Notation
+            UTTypeConformsTo: [public.plain-text]
+            UTTypeTagSpecification:
+              public.filename-extension: [pgn]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.castle.Castle
+        PRODUCT_NAME: Castle
+        SWIFT_VERSION: "5.0"
+        CODE_SIGN_IDENTITY: "-"
+        CODE_SIGN_STYLE: Manual
+        ENABLE_HARDENED_RUNTIME: NO
+        ENABLE_APP_SANDBOX: NO
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        SWIFT_STRICT_CONCURRENCY: minimal
+  CastleQuickLook:
+    type: app-extension
+    platform: macOS
+    sources:
+      - path: Extensions/QuickLook
+      - path: Castle/Chess
+      - path: Castle/Shared
+      - path: Castle/Resources/Assets.xcassets
+    info:
+      path: Extensions/QuickLook/Info.plist
+      properties:
+        CFBundleDisplayName: Castle PGN Preview
+        CFBundleShortVersionString: "1.0"
+        CFBundleVersion: "1"
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.quicklook.preview
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).PreviewViewController
+          NSExtensionAttributes:
+            QLSupportedContentTypes: [app.castle.pgn, com.apple.chess.pgn]
+            QLSupportsSearchableItems: false
+    entitlements:
+      path: Extensions/QuickLook/QuickLook.entitlements
+      properties:
+        com.apple.security.app-sandbox: true
+        com.apple.security.files.user-selected.read-only: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.castle.Castle.QuickLook
+        SWIFT_VERSION: "5.0"
+        CODE_SIGN_IDENTITY: "-"
+        CODE_SIGN_STYLE: Manual
+        ENABLE_HARDENED_RUNTIME: NO
+        SWIFT_STRICT_CONCURRENCY: minimal
+        ASSETCATALOG_COMPILER_APPICON_NAME: ""
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+  CastleWidget:
+    type: app-extension
+    platform: macOS
+    sources:
+      - path: Extensions/Widget
+      - path: Castle/Chess/Types.swift
+      - path: Castle/Chess/Position.swift
+      - path: Castle/Shared
+      - path: Castle/Resources/Assets.xcassets
+      - path: Castle/Resources/Data/puzzles.tsv
+    dependencies:
+      - sdk: WidgetKit.framework
+      - sdk: SwiftUI.framework
+    info:
+      path: Extensions/Widget/Info.plist
+      properties:
+        CFBundleDisplayName: Castle
+        CFBundleShortVersionString: "1.0"
+        CFBundleVersion: "1"
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    entitlements:
+      path: Extensions/Widget/Widget.entitlements
+      properties:
+        com.apple.security.app-sandbox: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.castle.Castle.Widget
+        SWIFT_VERSION: "5.0"
+        CODE_SIGN_IDENTITY: "-"
+        CODE_SIGN_STYLE: Manual
+        ENABLE_HARDENED_RUNTIME: NO
+        SWIFT_STRICT_CONCURRENCY: minimal
+        ASSETCATALOG_COMPILER_APPICON_NAME: ""
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor

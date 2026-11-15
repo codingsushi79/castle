@@ -1,0 +1,13 @@
+build/
+*.xcodeproj
+.DS_Store
+xcuserdata/
+node_modules/
+dist/
+src-tauri/target/
+src-tauri/gen/
+public/dev-command.json
+.claude/
+# Wasabi is a private engine: it is bundled into local builds only.
+src-tauri/resources/wasabi-2.1
+swift/Castle/Resources/Engines/

@@ -1,0 +1,15 @@
+{
+  "bundle": {
+    "targets": [
+      "app"
+    ],
+    "resources": {
+      "resources/wasabi-2.1": "wasabi-2.1"
+    },
+    "macOS": {
+      "signingIdentity": "8A545233A477714A03890D3CCA7E952E67A8A9C9",
+      "minimumSystemVersion": "12.0",
+      "entitlements": "entitlements.plist"
+    }
+  }
+}

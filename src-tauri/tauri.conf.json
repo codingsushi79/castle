@@ -1,0 +1,64 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Castle",
+  "version": "2.1.0",
+  "identifier": "app.castle.Castle",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Castle",
+        "width": 1320,
+        "height": 840,
+        "minWidth": 1040,
+        "minHeight": 680,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "category": "BoardGame",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "fileAssociations": [
+      {
+        "ext": [
+          "pgn"
+        ],
+        "name": "Portable Game Notation",
+        "role": "Viewer"
+      }
+    ],
+    "shortDescription": "Chess analysis, training and play",
+    "linux": {
+      "deb": {
+        "depends": []
+      }
+    },
+    "createUpdaterArtifacts": true
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDMyOEEzM0Y0QjlFMTc2N0UKUldSK2R1RzU5RE9LTXU2Z2greVdYS3lRQVNWUGplandqMDJGQkNhdFFMYXBzeUxvMVFYWmxKY3QK",
+      "endpoints": [
+        "https://github.com/codingsushi79/castle/releases/latest/download/latest.json"
+      ]
+    }
+  }
+}
