@@ -5,7 +5,7 @@ import { useState } from "react";
 import { importLegacyData } from "../lib/legacy";
 import { prettyCombo, recordNextCombo, SHORTCUTS, useShortcuts } from "../lib/shortcuts";
 import { call } from "../lib/storage";
-import { useUpdates } from "../lib/updates";
+import { isBeta, useUpdates, versionLabel } from "../lib/updates";
 import { Progress } from "@mantine/core";
 import { getVersion } from "@tauri-apps/api/app";
 import { useEffect } from "react";
@@ -189,9 +189,9 @@ function UpdatesCard() {
     <div className="card" style={{ maxWidth: 640 }}>
       <Group justify="space-between">
         <div>
-          <Text size="sm">Castle {version}</Text>
+          <Text size="sm">Castle {version && versionLabel(version)}</Text>
           <Text size="xs" c="dimmed">
-            {u.status === "checking" ? "Checking GitHub…" : u.status === "none" ? "You have the latest version." : u.status === "available" ? `Castle ${u.version} is available.` : u.status === "downloading" ? `Downloading… ${u.progress}%` : u.status === "ready" ? "Installed. Restarting…" : u.status === "error" ? `Could not update: ${u.error}` : "Updates come from the project's GitHub releases."}
+            {u.status === "checking" ? "Checking GitHub…" : u.status === "none" ? "You have the latest version." : u.status === "available" ? `Castle ${versionLabel(u.version!)} is available.` : u.status === "downloading" ? `Downloading… ${u.progress}%` : u.status === "ready" ? "Installed. Restarting…" : u.status === "error" ? `Could not update: ${u.error}` : "Updates come from the project's GitHub releases."}
           </Text>
         </div>
         {u.status === "available" ? <Button onClick={() => u.install()}>Install and restart</Button>
@@ -200,6 +200,21 @@ function UpdatesCard() {
       {u.status === "downloading" && <Progress mt="sm" value={u.progress} size="sm" animated />}
       {u.status === "available" && u.notes && <Text size="xs" c="dimmed" mt={6} style={{ whiteSpace: "pre-wrap" }}>{u.notes.slice(0, 600)}</Text>}
       <Switch mt="sm" label="Check for updates automatically" checked={u.auto} onChange={(e) => u.setAuto(e.currentTarget.checked)} />
+      <Group mt="md" justify="space-between" align="flex-start" wrap="nowrap">
+        <div>
+          <Text size="sm">Update channel</Text>
+          <Text size="xs" c="dimmed" maw={400}>
+            {u.channel === "beta"
+              ? "You get beta builds as soon as they are out, plus every stable release. Betas have the newest features and may have rough edges."
+              : "Stable releases only. Switch to Beta to try new features early."}
+          </Text>
+          {u.channel === "stable" && version && isBeta(version) && (
+            <Text size="xs" c="orange" mt={4}>You are on a beta now. You'll move back to stable with the next stable release.</Text>
+          )}
+        </div>
+        <SegmentedControl size="xs" value={u.channel} disabled={u.status === "downloading"} onChange={(v) => u.setChannel(v as "stable" | "beta")}
+          data={[{ value: "stable", label: "Stable" }, { value: "beta", label: "Beta" }]} />
+      </Group>
     </div>
   );
 }

@@ -2,7 +2,7 @@ import { Tooltip } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import {
   IconActivity, IconBolt, IconBook2, IconBooks, IconChartLine, IconCpu, IconDeviceTv, IconFlag, IconPuzzle, IconSettings,
-  IconTarget, IconTrophy, IconUserCircle, IconWorld, IconDatabase, IconCommand, IconBroadcast,
+  IconTarget, IconTrophy, IconUserCircle, IconWorld, IconDatabase, IconCommand,
 } from "@tabler/icons-react";
 import { ReactNode, useEffect, useState } from "react";
 import { CheatSheet, CommandPalette, openPalette } from "./components/Palette";
@@ -15,7 +15,7 @@ import { useOpenings } from "./lib/openings";
 import { usePuzzles } from "./lib/puzzles";
 import { dueNodes, useRepertoire } from "./lib/repertoire";
 import { installShortcutListener, useAction } from "./lib/shortcuts";
-import { checkOnLaunch, useUpdates } from "./lib/updates";
+import { checkOnLaunch, useUpdates, versionLabel } from "./lib/updates";
 import { call, copyText, isTauri, load, save } from "./lib/storage";
 import { activeTree, Page, useApp } from "./lib/store";
 import AccountsPage from "./pages/Accounts";
@@ -36,7 +36,6 @@ import WatchPage from "./pages/Watch";
 
 const PAGES: { id: Page; title: string; icon: ReactNode; group: number }[] = [
   { id: "play", title: "Play", icon: <IconFlag size={21} />, group: 0 },
-  { id: "online", title: "Castle Online", icon: <IconBroadcast size={21} />, group: 0 },
   { id: "lichess", title: "Lichess", icon: <IconBolt size={21} />, group: 0 },
   { id: "fics", title: "FICS", icon: <IconWorld size={21} />, group: 0 },
   { id: "watch", title: "Watch", icon: <IconDeviceTv size={21} />, group: 0 },
@@ -62,6 +61,7 @@ const say = (message: string) => notifications.show({ message, autoClose: 1800 }
 function GlobalActions({ onCheatSheet }: { onCheatSheet: () => void }) {
   const go = useApp((s) => s.go);
   for (const p of PAGES) useAction(`go.${p.id}`, () => go(p.id)); // eslint-disable-line react-hooks/rules-of-hooks
+  useAction("go.online", () => go("online"));
   useAction("settings", () => go("settings"));
   useAction("palette", openPalette);
   useAction("cheatsheet", onCheatSheet);
@@ -148,7 +148,7 @@ export default function App() {
       <div className="shell">
         <div className="titlebar" data-tauri-drag-region>
           <span className="title">Castle</span>
-          <span className="sub">{current?.title ?? "Settings"}</span>
+          <span className="sub">{current?.title ?? (page === "online" ? "Play" : "Settings")}</span>
           <span style={{ flex: 1 }} data-tauri-drag-region />
           <Tooltip label="Command palette  ⌘K">
             <button className="palette-button" onClick={openPalette}><IconCommand size={13} /> Search or run a command</button>
@@ -179,7 +179,7 @@ export default function App() {
           <span><IconDatabase size={13} /> {games.toLocaleString()} games</span>
           {lichess.state === "online" && <span><IconBolt size={13} /> {lichess.username}</span>}
           {batch.running && <span style={{ cursor: "pointer" }} onClick={() => go("library")}>Reviewing {batch.done + 1} of {batch.total}{batch.current ? `: ${batch.current}` : ""}</span>}
-          {updates.status === "available" && <span style={{ cursor: "pointer", fontWeight: 700 }} onClick={() => go("settings")}>Update to {updates.version}</span>}
+          {updates.status === "available" && <span style={{ cursor: "pointer", fontWeight: 700 }} onClick={() => go("settings")}>Update to {versionLabel(updates.version!)}</span>}
           <span className="grow">{status}</span>
           <span style={{ cursor: "pointer" }} onClick={() => setCheat(true)}>Shortcuts</span>
           <span>Castle</span>

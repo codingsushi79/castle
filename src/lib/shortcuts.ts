@@ -25,7 +25,7 @@ export const SHORTCUTS: ShortcutDef[] = [
   { id: "go.training", label: "Go to Training", group: "Pages", keys: "mod+8", global: true },
   { id: "go.repertoire", label: "Go to Repertoire", group: "Pages", keys: "mod+9", global: true },
   { id: "go.progress", label: "Go to Progress", group: "Pages", keys: "" },
-  { id: "go.online", label: "Go to Castle Online", group: "Pages", keys: "mod+0", global: true },
+  { id: "go.online", label: "Play online", group: "Pages", keys: "mod+0", global: true },
   { id: "go.library", label: "Go to Library", group: "Pages", keys: "mod+l", global: true },
   { id: "go.accounts", label: "Go to Accounts", group: "Pages", keys: "" },
   { id: "go.engines", label: "Go to Engines", group: "Pages", keys: "mod+e", global: true },

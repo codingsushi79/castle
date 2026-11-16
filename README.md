@@ -6,13 +6,13 @@ Built with [Tauri](https://tauri.app) (Rust) and React. The board is [chessgroun
 
 ## Download
 
-Get the latest version from [Releases](../../releases/latest). Castle checks for updates by itself (Settings, Updates).
+Get the latest version from [Releases](../../releases/latest). Castle checks for updates by itself (Settings, Updates). To try new features early, set the update channel there to Beta; beta builds are listed as pre-releases.
 
 Castle comes with its own engine, Wasabi 2.1, and also uses any UCI engine you have installed: Stockfish, Leela Chess Zero, Fairy-Stockfish for variants, and others. The Engines page finds them and can install some with Homebrew.
 
 ## Castle Online
 
-Play other Castle users with no account: everyone is a guest. Moves go directly between the two players, and the small server in `server/` (Vercel, Postgres) checks them, keeps the clocks, stores games for watching, and seals each guest's rating so it can't be edited.
+Play other Castle users from the Play page (opponent: Online) with no account: everyone is a guest. Quick pairing puts you in a queue for a time control, or you can play a friend with a code. Moves go directly between the two players, and the small server in `server/` (Vercel, Postgres) checks them, keeps the clocks, stores games for watching, and seals each guest's rating so it can't be edited.
 
 ## Building
 
@@ -22,7 +22,9 @@ npm run tauri dev        # run from source
 scripts/build-mac.sh     # release build on macOS
 ```
 
-Releases are built for macOS, Windows and Linux by the workflow in `.github/workflows/build.yml` when a `v*` tag is pushed.
+Releases are built for macOS, Windows and Linux by the workflow in `.github/workflows/build.yml` when a `v*` tag is pushed. A version with a numeric suffix (for example `2.3.0-1`) is published as a beta.
+
+The Online server deploys from `server/`: the Vercel project's Root Directory must be `server`.
 
 ## Licence
 

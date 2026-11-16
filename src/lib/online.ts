@@ -27,13 +27,22 @@ export interface Seek { id: string; code: string; name: string; rating: number; 
 export interface Seat { id: string; code: string; color: Color; key: string }
 export interface Leader { guest: string; name: string; rating: number; games: number }
 export interface ChatLine { from: Color | "system"; text: string }
+export interface QueueSpec { minutes: number; increment: number; rated: boolean }
 
 async function api<T = any>(path: string, body?: unknown): Promise<T> {
-  const r = await fetch(`${ONLINE_API}/${path}`, body === undefined ? undefined : { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  let r: Response;
+  try {
+    r = await fetch(`${ONLINE_API}/${path}`, body === undefined ? undefined : { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  } catch {
+    // WebKit says only "Load failed" for any network error; say something useful instead.
+    throw Object.assign(new Error("Could not reach Castle Online. Check your internet connection and try again."), { status: 0 });
+  }
   const data = await r.json().catch(() => ({}));
-  if (!r.ok) throw Object.assign(new Error(data.error ?? `The server answered ${r.status}.`), { status: r.status });
+  if (!r.ok) throw Object.assign(new Error(data.error ?? (r.status === 404 ? "Castle Online is down for maintenance. Try again in a few minutes." : `The server answered ${r.status}.`)), { status: r.status });
   return data as T;
 }
+
+const sameSpec = (s: Seek, q: QueueSpec) => s.minutes === q.minutes && s.increment === q.increment && s.rated === q.rated;
 
 const randomName = () => `Guest${Math.floor(1000 + Math.random() * 9000)}`;
 const ICE: RTCConfiguration = { iceServers: [{ urls: ["stun:stun.l.google.com:19302", "stun:stun.cloudflare.com:3478"] }] };
@@ -55,20 +64,26 @@ interface State {
   receivedAt: number;
   link: "none" | "connecting" | "direct" | "relay";
   chat: ChatLine[];
+  /** Set while looking for an opponent with quick pairing. */
+  queue?: QueueSpec;
   setName: (name: string) => void;
   start: () => Promise<void>;
   refreshLobby: () => Promise<void>;
   create: (o: { minutes: number; increment: number; color: string; rated: boolean; public: boolean }) => Promise<void>;
   join: (code: string) => Promise<void>;
+  /** Joins someone waiting for the same time control, or waits in the queue for one. */
+  quickPair: (q: QueueSpec) => Promise<void>;
+  leaveQueue: () => Promise<void>;
   watch: (id: string) => void;
   leave: () => void;
   move: (uci: string) => void;
-  act: (action: "resign" | "abort" | "draw" | "decline" | "rematch") => Promise<void>;
+  act: (action: "resign" | "abort" | "cancel" | "draw" | "decline" | "rematch") => Promise<void>;
   say: (text: string) => void;
   toTree: (g?: GameView) => GameTree;
 }
 
 let poll: ReturnType<typeof setInterval> | undefined;
+let queueTimer: ReturnType<typeof setInterval> | undefined;
 let signalPoll: ReturnType<typeof setInterval> | undefined;
 let peer: RTCPeerConnection | undefined;
 let channel: RTCDataChannel | undefined;
@@ -232,6 +247,44 @@ export const useOnline = create<State>((set, get) => {
     connectPeer();
   };
 
+  /** Tries each waiting player with the same time control; true once seated. */
+  const joinAny = async (seeks: Seek[]) => {
+    for (const s of seeks) {
+      try {
+        const seat = await api<Seat>("join", { token: token(), name: get().name, code: s.code });
+        sit(seat);
+        return true;
+      } catch { /* taken, or our own seek from another window */ }
+    }
+    return false;
+  };
+
+  /**
+   * While our seek waits, watch the lobby. If two players queue at once, each
+   * sees the other's seek; the one whose game id sorts later steps across.
+   */
+  const watchQueue = () => {
+    clearInterval(queueTimer);
+    queueTimer = setInterval(async () => {
+      const q = get().queue, seat = get().seat, g = get().game;
+      if (!q || !seat) return clearInterval(queueTimer);
+      if (g && g.id === seat.id && g.status !== "waiting") {
+        set({ queue: undefined });
+        return clearInterval(queueTimer);
+      }
+      const lobby = await api<{ open: Seek[] }>("lobby").catch(() => undefined);
+      const earlier = lobby?.open.filter((s) => s.id !== seat.id && s.id < seat.id && sameSpec(s, q)) ?? [];
+      if (!earlier.length) return;
+      const mine = await api<GameView>("action", { id: seat.id, key: seat.key, action: "cancel" }).catch(() => undefined);
+      if (!mine || mine.status !== "finished") return; // Someone joined us meanwhile.
+      if (await joinAny(earlier)) { set({ queue: undefined }); return clearInterval(queueTimer); }
+      // Missed them: wait again with a fresh seek.
+      const again = await api<Seat>("games", { token: token(), name: get().name, ...q, color: "random", public: true }).catch(() => undefined);
+      if (again) sit(again);
+      else { set({ queue: undefined, error: "Could not stay in the queue. Try again." }); clearInterval(queueTimer); }
+    }, 2500);
+  };
+
   return {
     name: load("onlineName", "") || randomName(),
     ready: false,
@@ -289,6 +342,25 @@ export const useOnline = create<State>((set, get) => {
       const seat = await api<Seat>("join", { token: token(), name: get().name, code });
       sit(seat);
     },
+    quickPair: async (q) => {
+      set({ error: undefined });
+      const lobby = await api<{ open: Seek[] }>("lobby");
+      if (await joinAny(lobby.open.filter((s) => sameSpec(s, q)))) return;
+      const seat = await api<Seat>("games", { token: token(), name: get().name, ...q, color: "random", public: true });
+      set({ queue: q });
+      sit(seat);
+      watchQueue();
+    },
+    leaveQueue: async () => {
+      clearInterval(queueTimer);
+      const seat = get().seat;
+      set({ queue: undefined });
+      if (seat && get().game?.status === "waiting") {
+        const v = await api<GameView>("action", { id: seat.id, key: seat.key, action: "cancel" }).catch(() => undefined);
+        if (v && v.status !== "finished") return accept(v); // Matched just as we left: play it.
+      }
+      get().leave();
+    },
     watch: (id) => {
       closePeer();
       set({ seat: undefined, game: undefined, link: "none", chat: [] });
@@ -296,9 +368,10 @@ export const useOnline = create<State>((set, get) => {
     },
     leave: () => {
       clearInterval(poll);
+      clearInterval(queueTimer);
       closePeer();
       save("onlineSeat", null);
-      set({ seat: undefined, game: undefined, link: "none", chat: [] });
+      set({ seat: undefined, game: undefined, link: "none", chat: [], queue: undefined });
       get().refreshLobby();
     },
     move: (uci) => {

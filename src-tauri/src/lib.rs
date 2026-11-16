@@ -2,6 +2,7 @@ mod db;
 mod engine;
 mod fics;
 mod misc;
+mod updates;
 
 use tauri::Manager;
 
@@ -22,6 +23,7 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .manage(engine::Engines::default())
         .manage(fics::Fics::default())
+        .manage(updates::Pending::default())
         .setup(|app| {
             let dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&dir)?;
@@ -78,6 +80,8 @@ pub fn run() {
             misc::print_page,
             misc::legacy_library,
             misc::legacy_data,
+            updates::update_check,
+            updates::update_install,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Castle");

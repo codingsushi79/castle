@@ -8,7 +8,9 @@ import { available, entryOf, useEngines } from "../lib/engines";
 import { openingFor, useOpenings } from "../lib/openings";
 import { downloadMaia, installedMaia, MAIA_LEVELS, PERSONALITIES } from "../lib/personalities";
 import { hasClock, usePlay } from "../lib/play";
+import { useOnline } from "../lib/online";
 import { useApp, useTree } from "../lib/store";
+import { OnlineGame, OnlinePanels } from "./Online";
 
 const TIMES: [number, number, string][] = [[0, 0, "No clock"], [1, 0, "1+0"], [3, 2, "3+2"], [5, 0, "5+0"], [10, 5, "10+5"], [15, 10, "15+10"], [30, 0, "30+0"]];
 
@@ -23,6 +25,8 @@ export default function PlayPage() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+  const onlineGame = useOnline((s) => !!s.game);
+  if (play.phase === "setup" && play.opponent === "online" && onlineGame) return <OnlineGame />;
   return play.phase === "setup" ? <Setup /> : <Game />;
 }
 
@@ -37,19 +41,20 @@ function Setup() {
   useEffect(() => { installedMaia().then(setMaia); }, []);
   const lc0 = !!entryOf("lc0")?.path;
   const persona = PERSONALITIES.find((x) => x.id === p.personaId) ?? PERSONALITIES[3];
-  const preview = p.customStart?.fen ?? (p.rules === "chess" ? START_FEN : undefined);
+  const online = p.opponent === "online";
+  const preview = online ? START_FEN : p.customStart?.fen ?? (p.rules === "chess" ? START_FEN : undefined);
 
   return (
     <div className="page">
       <div className="boardcol">
         <div className="boardrow">
-          <Board key={p.rules + (p.customStart?.fen ?? "")} fen={preview ?? START_FEN} rules={p.customStart?.rules ?? "chess"} orientation={p.side === "black" ? "black" : "white"} />
+          <Board key={p.rules + (p.customStart?.fen ?? "") + online} fen={preview ?? START_FEN} rules={online ? "chess" : p.customStart?.rules ?? "chess"} orientation={!online && p.side === "black" ? "black" : "white"} />
         </div>
       </div>
       <div className="sidecol wide stagger">
         <Panel title="Opponent">
           <SegmentedControl fullWidth value={p.opponent} onChange={(v) => p.patch({ opponent: v as any })}
-            data={[{ value: "engine", label: "Engine" }, { value: "persona", label: "Personality" }, { value: "human", label: "Human here" }]} />
+            data={[{ value: "engine", label: "Engine" }, { value: "persona", label: "Personality" }, { value: "human", label: "Human here" }, { value: "online", label: "Online" }]} />
           {p.opponent === "engine" && (
             <>
               <Select mt={8} label="Engine" value={p.engineId} onChange={(v) => v && p.patch({ engineId: v })} data={available().map((e) => ({ value: e.id, label: e.name }))} />
@@ -94,12 +99,13 @@ function Setup() {
             </>
           )}
         </Panel>
-        {p.opponent !== "human" && (
+        {online && <OnlinePanels />}
+        {!online && p.opponent !== "human" && (
           <Panel title="Play as">
             <SegmentedControl fullWidth value={p.side} onChange={(v) => p.patch({ side: v as any })} data={[{ value: "white", label: "White" }, { value: "black", label: "Black" }, { value: "random", label: "Random" }]} />
           </Panel>
         )}
-        <Panel title="Game">
+        {!online && <Panel title="Game">
           {p.customStart ? (
             <Group justify="space-between">
               <Text size="sm">From the position you chose ({variantName(p.customStart.rules)})</Text>
@@ -145,11 +151,13 @@ function Setup() {
               <Text size="xs" c="dimmed" mt={6}>Simple delay: the clock waits that long before running each move. Bronstein: after each move, up to that much of the time used is given back.</Text>
             </div>
           )}
-        </Panel>
-        <div style={{ padding: 12 }}>
-          {p.error && <Alert color="red" mb={8} p="xs">{p.error}</Alert>}
-          <Button fullWidth size="md" leftSection={<IconPlayerPlayFilled size={16} />} onClick={() => p.start()}>Start game</Button>
-        </div>
+        </Panel>}
+        {!online && (
+          <div style={{ padding: 12 }}>
+            {p.error && <Alert color="red" mb={8} p="xs">{p.error}</Alert>}
+            <Button fullWidth size="md" leftSection={<IconPlayerPlayFilled size={16} />} onClick={() => p.start()}>Start game</Button>
+          </div>
+        )}
       </div>
     </div>
   );

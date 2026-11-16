@@ -10,7 +10,8 @@ import { load, save } from "./storage";
 import { Engine } from "./uci";
 
 export interface PlaySetup {
-  opponent: "engine" | "persona" | "human";
+  /** "online" hands the Play page over to Castle Online. */
+  opponent: "engine" | "persona" | "human" | "online";
   side: "white" | "black" | "random";
   engineId: string;
   personaId: string;
@@ -169,6 +170,7 @@ export const usePlay = create<PlayState>((set, get) => {
 
     start: async () => {
       const s = get();
+      if (s.opponent === "online") return;
       token++;
       engine?.quit();
       engine = undefined;

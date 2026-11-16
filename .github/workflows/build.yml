@@ -2,6 +2,11 @@ name: Release
 
 # Push a tag such as v2.1.1 to build Castle for every platform and publish it.
 # Installed copies of Castle find the new version through latest.json on the release.
+#
+# A version with a numeric suffix, such as 2.3.0-1, is a beta: it is published as a
+# pre-release, so the stable channel (GitHub's "latest" release) never sees it. The
+# beta channel reads latest.json from the `updater-beta` release, which is moved to
+# each new release, beta or stable, that is newer than what it holds.
 on:
   push:
     tags: ["v*"]
@@ -22,14 +27,17 @@ jobs:
         with:
           script: |
             const { version } = require('./package.json');
+            const [base, beta] = version.split('-');
             const { data } = await github.rest.repos.createRelease({
               owner: context.repo.owner,
               repo: context.repo.repo,
               tag_name: `v${version}`,
-              name: `Castle ${version}`,
-              body: 'Download the file for your system below. Installed copies of Castle update themselves.',
+              name: beta ? `Castle ${base} beta ${beta}` : `Castle ${version}`,
+              body: beta
+                ? 'A beta build. Turn on the Beta update channel in Settings to get these automatically.'
+                : 'Download the file for your system below. Installed copies of Castle update themselves.',
               draft: true,
-              prerelease: false,
+              prerelease: !!beta,
             });
             // Wasabi's binaries go on every release, so Castle can download one when its bundle lacks it.
             const fs = require('fs');
@@ -97,9 +105,51 @@ jobs:
       - uses: actions/github-script@v7
         with:
           script: |
+            const { owner, repo } = context.repo;
+            const release_id = Number('${{ needs.create-release.outputs.release_id }}');
+            const { data: draft } = await github.rest.repos.getRelease({ owner, repo, release_id });
             await github.rest.repos.updateRelease({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              release_id: Number('${{ needs.create-release.outputs.release_id }}'),
-              draft: false,
+              owner, repo, release_id, draft: false,
+              make_latest: draft.prerelease ? 'false' : 'true',
             });
+
+            // Move the beta channel to this release if it is newer than what the channel holds.
+            const download = async (asset_id) => Buffer.from((await github.rest.repos.getReleaseAsset({
+              owner, repo, asset_id, headers: { accept: 'application/octet-stream' },
+            })).data);
+            const parse = (v) => {
+              const [base, pre] = v.replace(/^v/, '').split('-');
+              return [...base.split('.').map(Number), pre === undefined ? Infinity : Number(pre)];
+            };
+            const newer = (a, b) => {
+              const x = parse(a), y = parse(b);
+              for (let i = 0; i < 4; i++) if (x[i] !== y[i]) return x[i] > y[i];
+              return false;
+            };
+            const { data: assets } = await github.rest.repos.listReleaseAssets({ owner, repo, release_id, per_page: 100 });
+            const manifest = assets.find((a) => a.name === 'latest.json');
+            if (!manifest) return core.warning('This release has no latest.json; the beta channel was not moved.');
+            const fresh = await download(manifest.id);
+            const version = JSON.parse(fresh.toString()).version;
+
+            let channel;
+            try {
+              channel = (await github.rest.repos.getReleaseByTag({ owner, repo, tag: 'updater-beta' })).data;
+            } catch {
+              channel = (await github.rest.repos.createRelease({
+                owner, repo, tag_name: 'updater-beta', name: 'Beta update channel',
+                body: 'Castle reads the beta update manifest from this release. Download builds from the versioned releases instead.',
+                prerelease: true, make_latest: 'false',
+              })).data;
+            }
+            const old = channel.assets.find((a) => a.name === 'latest.json');
+            if (old) {
+              const current = JSON.parse((await download(old.id)).toString()).version;
+              if (!newer(version, current)) return core.info(`The beta channel stays on ${current}.`);
+              await github.rest.repos.deleteReleaseAsset({ owner, repo, asset_id: old.id });
+            }
+            await github.rest.repos.uploadReleaseAsset({
+              owner, repo, release_id: channel.id, name: 'latest.json', data: fresh,
+              headers: { 'content-type': 'application/json' },
+            });
+            core.info(`The beta channel now offers ${version}.`);

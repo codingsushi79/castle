@@ -213,6 +213,12 @@ const routes: Record<string, (req: Request, url: URL, body: any) => Promise<Resp
       case "abort":
         if (g.status === "playing" && g.ply < 2) g = await finish(g, "aborted", "aborted");
         break;
+      case "cancel": {
+        // Only withdraws a game nobody has joined; a game that just started is left alone.
+        const rows = await sql`update games set status = 'finished', result = 'aborted', reason = 'cancelled', updated_at = now() where id = ${g.id} and status = 'waiting' returning *`;
+        g = rows[0] ?? (await load(g.id))!;
+        break;
+      }
       case "draw":
         if (g.status === "playing" && g.ply >= 2) {
           if (g.draw_offer === other(seat)) g = await finish(g, "1/2-1/2", "agreement");
