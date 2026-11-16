@@ -6,6 +6,9 @@ import {
 } from "@tabler/icons-react";
 import { ReactNode, useEffect, useState } from "react";
 import { CheatSheet, CommandPalette, openPalette } from "./components/Palette";
+import { WhatsNew } from "./components/WhatsNew";
+import { useOnline } from "./lib/online";
+import { ChallengeCard } from "./pages/Online";
 import { useBatch } from "./lib/batch";
 import { db } from "./lib/db";
 import { available, useEngines } from "./lib/engines";
@@ -16,6 +19,7 @@ import { usePuzzles } from "./lib/puzzles";
 import { dueNodes, useRepertoire } from "./lib/repertoire";
 import { installShortcutListener, useAction } from "./lib/shortcuts";
 import { checkOnLaunch, useUpdates, versionLabel } from "./lib/updates";
+import { usePlay } from "./lib/play";
 import { call, copyText, isTauri, load, save } from "./lib/storage";
 import { activeTree, Page, useApp } from "./lib/store";
 import AccountsPage from "./pages/Accounts";
@@ -86,6 +90,27 @@ function GlobalActions({ onCheatSheet }: { onCheatSheet: () => void }) {
   return null;
 }
 
+/** Incoming challenges, shown on every page except the one that already lists them. */
+function ChallengeStack() {
+  const incoming = useOnline((s) => s.incoming);
+  const onPlay = useApp((s) => s.page === "play");
+  const onlineSetup = usePlay((s) => s.opponent === "online" && s.phase === "setup");
+  const onPlayOnline = onPlay && onlineSetup;
+  const go = useApp((s) => s.go);
+  if (!incoming.length || onPlayOnline) return null;
+  return (
+    <div className="challenge-stack">
+      {incoming.map((c) => (
+        <ChallengeCard key={c.id} c={c} onAccept={() => {
+          // The game is played on the Play page.
+          if (usePlay.getState().phase === "setup") usePlay.getState().patch({ opponent: "online" });
+          go("play");
+        }} />
+      ))}
+    </div>
+  );
+}
+
 export default function App() {
   const { page, status, libraryRevision, tabs } = useApp();
   const go = useApp((s) => s.go);
@@ -107,6 +132,8 @@ export default function App() {
     useOpenings.getState().load();
     usePuzzles.getState().load();
     useLichess.getState().connect();
+    // Signed in quietly, so challenges from friends arrive anywhere in Castle.
+    useOnline.getState().startBackground();
     if (!isTauri) return;
     checkOnLaunch();
     // Bring over games and progress from the earlier version of Castle, once.
@@ -145,6 +172,8 @@ export default function App() {
       <GlobalActions onCheatSheet={() => setCheat(true)} />
       <CommandPalette />
       <CheatSheet opened={cheat} onClose={() => setCheat(false)} />
+      <WhatsNew />
+      <ChallengeStack />
       <div className="shell">
         <div className="titlebar" data-tauri-drag-region>
           <span className="title">Castle</span>

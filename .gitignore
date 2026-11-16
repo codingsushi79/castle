@@ -10,3 +10,4 @@ public/dev-command.json
 .claude/
 # Wasabi ships as compiled binaries only (src-tauri/resources/wasabi); its source is not in this repository.
 swift/Castle/Resources/Engines/
+.vercel

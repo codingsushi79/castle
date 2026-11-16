@@ -1,5 +1,5 @@
-import { Button, Group, SegmentedControl, Select, Text } from "@mantine/core";
-import { IconBolt, IconBulb, IconCalendar, IconCheck, IconEye, IconFlame, IconPlayerSkipForward, IconRotate, IconTarget, IconX } from "@tabler/icons-react";
+import { Alert, Button, Group, Loader, SegmentedControl, Select, Switch, Text, TextInput } from "@mantine/core";
+import { IconBolt, IconBulb, IconCalendar, IconCheck, IconEye, IconFlame, IconPlayerSkipForward, IconRotate, IconSwords, IconTarget, IconTrophy, IconX } from "@tabler/icons-react";
 import { useEffect, useState } from "react";
 import { Board } from "../components/Board";
 import { Panel } from "../components/common";
@@ -8,6 +8,8 @@ import { canMovePuzzle, dailyStreak, dayNumber, PuzzleMode, THEME_NAMES, usePuzz
 import { clockText } from "../lib/storage";
 import { useApp } from "../lib/store";
 import { usePacks } from "../lib/packs";
+import { useBattle } from "../lib/battle";
+import { api, useOnline } from "../lib/online";
 import { IconPackage, IconTrash } from "@tabler/icons-react";
 import { ActionIcon } from "@mantine/core";
 
@@ -20,6 +22,7 @@ export default function PuzzlesPage() {
   const finished = p.status === "solved" || p.status === "revealed";
   const themes = ["all", ...Object.keys(THEME_NAMES).filter((t) => t !== "all" && t !== "mistake").sort((a, b) => THEME_NAMES[a].localeCompare(THEME_NAMES[b]))];
   const dailyDone = p.stats.dailySolved.includes(dayNumber());
+  if (p.mode === "battle") return <BattlePage />;
 
   const status = {
     loading: ["Loading puzzles", "One moment…", "dimmed"],
@@ -36,7 +39,7 @@ export default function PuzzlesPage() {
       <div className="boardcol">
         <div className="toolbar" style={{ margin: "-14px -16px 6px" }}>
           <SegmentedControl value={p.mode} onChange={(v) => p.setMode(v as PuzzleMode)}
-            data={[{ value: "rated", label: "Rated" }, { value: "rush", label: "Rush" }, { value: "mistakes", label: `My mistakes${p.mistakes.length ? ` (${p.mistakes.length})` : ""}` }, { value: "daily", label: "Daily" }, { value: "pack", label: "Packs" }]} />
+            data={[{ value: "rated", label: "Rated" }, { value: "rush", label: "Rush" }, { value: "mistakes", label: `My mistakes${p.mistakes.length ? ` (${p.mistakes.length})` : ""}` }, { value: "daily", label: "Daily" }, { value: "pack", label: "Packs" }, { value: "battle", label: "Battle" }]} />
           <span style={{ flex: 1 }} />
           <Text size="xs" c="dimmed">{p.loaded ? `${p.all.length.toLocaleString()} puzzles` : "Loading…"}</Text>
         </div>
@@ -78,6 +81,7 @@ export default function PuzzlesPage() {
             <Text size="xs" c="dimmed" mt={6}>Best: {Math.max(0, ...p.stats.rushScores)}. Three misses or the clock end the run. Puzzles get harder as you go.</Text>
           </Panel>
         )}
+        {p.mode === "rush" && !p.rushActive && <RushBoard minutes={p.rushMinutes} />}
         {p.mode === "mistakes" && (
           <Panel>
             <Text fw={700} size="md"><IconTarget size={16} style={{ verticalAlign: -3 }} /> {p.mistakes.length} position{p.mistakes.length === 1 ? "" : "s"} to fix</Text>
@@ -184,5 +188,139 @@ function PackCard() {
         </div>
       )}
     </Panel>
+  );
+}
+
+/** The best rush scores from everyone who plays Castle Online. */
+function RushBoard({ minutes }: { minutes: number }) {
+  const [length, setLength] = useState(minutes === 5 ? 5 : 3);
+  const [scores, setScores] = useState<{ guest: string; name: string; score: number }[]>();
+  const me = useOnline((s) => s.profile?.id);
+  useEffect(() => {
+    let live = true;
+    api<{ scores: { guest: string; name: string; score: number }[] }>(`rush?minutes=${length}`).then((r) => live && setScores(r.scores)).catch(() => live && setScores([]));
+    return () => { live = false; };
+  }, [length]);
+  return (
+    <Panel title={<><IconTrophy size={13} /> Rush leaderboard</>} pad={false}
+      right={<SegmentedControl size="xs" value={String(length)} onChange={(v) => setLength(Number(v))} data={[{ value: "3", label: "3 min" }, { value: "5", label: "5 min" }]} />}>
+      {!scores ? <Loader size="xs" m={12} /> : scores.length ? scores.slice(0, 10).map((x, i) => (
+        <div key={x.guest} className="listrow" style={{ cursor: "default", fontWeight: x.guest === me ? 800 : undefined }}>
+          <Text size="xs" w={20} c="dimmed">{i + 1}</Text>
+          <Text size="sm" style={{ flex: 1 }} truncate>{x.name}{x.guest === me ? " (you)" : ""}</Text>
+          <Text size="sm" fw={700}>{x.score}</Text>
+        </div>
+      )) : <Text size="xs" c="dimmed" p={12}>No scores yet. Runs are posted here when you play Castle Online on this computer.</Text>}
+    </Panel>
+  );
+}
+
+/** Puzzle battles: race another player through the same puzzles. */
+function BattlePage() {
+  const p = usePuzzles();
+  const b = useBattle();
+  const online = useOnline();
+  const [code, setCode] = useState("");
+  const [minutes, setMinutes] = useState("3");
+  const [isPublic, setPublic] = useState(true);
+  const [busy, setBusy] = useState<string>();
+  const [, tick] = useState(0);
+  useEffect(() => { const t = setInterval(() => tick((n) => n + 1), 250); return () => clearInterval(t); }, []);
+  useEffect(() => {
+    if (!online.ready) { online.start(); return; }
+    online.refreshLobby();
+    const t = setInterval(() => !useBattle.getState().view && useOnline.getState().refreshLobby(), 4000);
+    return () => clearInterval(t);
+  }, [online.ready]); // eslint-disable-line react-hooks/exhaustive-deps
+  const run = async (what: string, f: () => Promise<void>) => {
+    setBusy(what);
+    try { await f(); } catch (e: any) { useBattle.setState({ error: e.message }); } finally { setBusy(undefined); }
+  };
+
+  const v = b.view;
+  const now = Date.now() + b.offset;
+  const me = v && b.side ? v[b.side] : undefined;
+  const them = v && b.side ? v[b.side === "a" ? "b" : "a"] : undefined;
+  // My own running score is ahead of what the server last echoed.
+  const myScore = Math.max(b.score, me?.score ?? 0), myStrikes = Math.max(b.strikes, me?.strikes ?? 0);
+  const left = v?.endsAt ? Math.max(0, (v.endsAt - now) / 1000) : (v?.minutes ?? 3) * 60;
+  const strikes = (n: number) => <Group gap={2}>{[0, 1, 2].map((i) => <IconX key={i} size={13} color={i < n ? "#ff6b6b" : "#555"} stroke={3} />)}</Group>;
+  const verdict = v?.status === "finished" && them ? (myScore > them.score ? "You win!" : myScore < them.score ? `${them.name} wins` : "A tie") : undefined;
+
+  return (
+    <div className="page">
+      <div className="boardcol">
+        <div className="toolbar" style={{ margin: "-14px -16px 6px" }}>
+          <SegmentedControl value={p.mode} onChange={(m) => { b.leave(); p.setMode(m as PuzzleMode); }}
+            data={[{ value: "rated", label: "Rated" }, { value: "rush", label: "Rush" }, { value: "mistakes", label: "My mistakes" }, { value: "daily", label: "Daily" }, { value: "pack", label: "Packs" }, { value: "battle", label: "Battle" }]} />
+        </div>
+        <div className={"boardrow" + (b.flash === "wrong" ? " shake" : "")}>
+          <Board key={v ? `${v.id}-${b.index}` : "idle"} fen={b.fen} orientation={b.userColor} lastMove={b.lastMove}
+            movable={b.ready ? b.userColor : undefined} onMove={(m) => b.attempt(m)} />
+        </div>
+      </div>
+      <div className="sidecol stagger">
+        {b.error && <div style={{ padding: "10px 12px 0" }}><Alert color="orange" p="xs" withCloseButton onClose={() => useBattle.setState({ error: undefined })}>{b.error}</Alert></div>}
+        {v && me ? (
+          <>
+            <Panel title={<><IconSwords size={13} /> Puzzle battle · {v.minutes} min</>}>
+              {v.status === "waiting" ? (
+                <>
+                  <Group gap={8}><Loader size="xs" /><Text fw={700}>Waiting for an opponent</Text></Group>
+                  <Text size="sm" c="dimmed" mt={4}>Share the code <b>{v.code}</b>{isPublic ? ", or wait for someone from the lobby" : ""}. The race starts five seconds after they join.</Text>
+                </>
+              ) : v.status === "countdown" ? (
+                <Text fw={800} fz={28} ta="center">Starting in {Math.max(1, Math.ceil(((v.startedAt ?? now) - now) / 1000))}…</Text>
+              ) : (
+                <Text fw={800} fz={28} ta="center" ff="ui-rounded, system-ui" c={left < 15 && v.status === "running" ? "red" : undefined}>{verdict ?? clockText(left)}</Text>
+              )}
+              {v.status !== "waiting" && them && (
+                <Group grow mt="sm">
+                  {[{ s: me, score: myScore, st: myStrikes, label: "You" }, { s: them, score: them.score, st: them.strikes, label: them.name ?? "Opponent" }].map((x) => (
+                    <div key={x.label} style={{ textAlign: "center" }}>
+                      <Text size="xs" c="dimmed" truncate>{x.label}</Text>
+                      <Text fw={800} fz={36} ff="ui-rounded, system-ui" lh={1.1}>{x.score}</Text>
+                      <Group justify="center">{strikes(x.st)}</Group>
+                    </div>
+                  ))}
+                </Group>
+              )}
+              {v.status === "running" && myStrikes >= 3 && <Text size="sm" c="dimmed" mt={6} ta="center">Three misses: you're out. Wait for the clock.</Text>}
+              {v.status === "running" && b.flash && <Text size="sm" mt={6} ta="center" c={b.flash === "right" ? "green" : "red"}>{b.flash === "right" ? "Solved" : "Missed"}</Text>}
+              {v.status === "running" && !b.flash && myStrikes < 3 && <Text size="sm" mt={6} ta="center" c="dimmed">{b.userColor === "white" ? "White" : "Black"} to move · puzzle {b.index + 1}</Text>}
+            </Panel>
+            <div style={{ padding: 12 }}>
+              <Button fullWidth variant="default" onClick={() => b.leave()}>{v.status === "finished" ? "New battle" : v.status === "waiting" ? "Cancel" : "Leave"}</Button>
+            </div>
+          </>
+        ) : (
+          <>
+            <Panel title={<><IconSwords size={13} /> Puzzle battle</>}>
+              <Text size="sm" c="dimmed">Race another player through the same puzzles. Each solve scores a point; three misses and you're out. Puzzles get harder as you go.</Text>
+              <Group mt="sm" gap="md" align="flex-end">
+                <SegmentedControl size="xs" value={minutes} onChange={setMinutes} data={[{ value: "2", label: "2 min" }, { value: "3", label: "3 min" }, { value: "5", label: "5 min" }]} />
+                <Switch size="xs" label="Listed in the lobby" checked={isPublic} onChange={(e) => setPublic(e.currentTarget.checked)} />
+              </Group>
+              <Button mt="sm" fullWidth loading={busy === "create"} disabled={!online.ready} leftSection={<IconSwords size={15} />}
+                onClick={() => run("create", () => b.create(Number(minutes), isPublic))}>Start a battle</Button>
+              <Group mt="sm" gap={6} wrap="nowrap">
+                <TextInput style={{ flex: 1 }} size="xs" placeholder="Join with a code" value={code} onChange={(e) => setCode(e.currentTarget.value.toUpperCase())}
+                  onKeyDown={(e) => e.key === "Enter" && code && run("join", () => b.join(code))} />
+                <Button size="xs" variant="default" disabled={!code || !online.ready} loading={busy === "join"} onClick={() => run("join", () => b.join(code))}>Join</Button>
+              </Group>
+              {!online.ready && <Text size="xs" c={online.error ? "orange" : "dimmed"} mt={6}>{online.error ?? "Connecting to Castle Online…"}</Text>}
+            </Panel>
+            <Panel title="Open battles" pad={false}>
+              {online.battles.length ? online.battles.map((x) => (
+                <div key={x.id} className="listrow">
+                  <Text size="sm" style={{ flex: 1 }} truncate><b>{x.name}</b> · {x.minutes} min</Text>
+                  <Button size="xs" variant="light" loading={busy === x.code} onClick={() => run(x.code, () => b.join(x.code))}>Battle</Button>
+                </div>
+              )) : <Text size="sm" c="dimmed" p={12}>Nobody is waiting. Start a battle and it shows up here.</Text>}
+            </Panel>
+          </>
+        )}
+      </div>
+    </div>
   );
 }

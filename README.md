@@ -12,7 +12,7 @@ Castle comes with its own engine, Wasabi 2.1, and also uses any UCI engine you h
 
 ## Castle Online
 
-Play other Castle users from the Play page (opponent: Online) with no account: everyone is a guest. Quick pairing puts you in a queue for a time control, or you can play a friend with a code. Moves go directly between the two players, and the small server in `server/` (Vercel, Postgres) checks them, keeps the clocks, stores games for watching, and seals each guest's rating so it can't be edited.
+Play other Castle users from the Play page (opponent: Online) with no account: everyone is a guest. Quick pairing finds someone near your rating in standard chess or any of eight variants; you can also play friends by code or challenge, join hourly or home-made arenas, race through puzzle battles, and watch live games with a spectator chat. Moves go directly between the two players, and the small server in `server/` (Vercel, Postgres) checks them, keeps the clocks, stores games for watching, and seals each guest's rating so it can't be edited.
 
 ## Building
 
@@ -24,7 +24,7 @@ scripts/build-mac.sh     # release build on macOS
 
 Releases are built for macOS, Windows and Linux by the workflow in `.github/workflows/build.yml` when a `v*` tag is pushed. A version with a numeric suffix (for example `2.3.0-1`) is published as a beta.
 
-The Online server deploys from `server/`: the Vercel project's Root Directory must be `server`.
+The Online server deploys from `server/` (the Vercel project's Root Directory is `server`) and sets up its own database tables on first use. What changed in each version is in `CHANGELOG.md`, which Castle also shows after an update.
 
 ## Licence
 

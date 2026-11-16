@@ -28,14 +28,18 @@ jobs:
           script: |
             const { version } = require('./package.json');
             const [base, beta] = version.split('-');
+            // The release notes are this version's section of CHANGELOG.md (Castle shows the same text).
+            const log = require('fs').readFileSync('CHANGELOG.md', 'utf8');
+            const section = log.split(/^## /m).find((s) => s.split('\n')[0].trim() === version);
+            const notes = section ? section.split('\n').slice(1).join('\n').trim() + '\n\n' : '';
             const { data } = await github.rest.repos.createRelease({
               owner: context.repo.owner,
               repo: context.repo.repo,
               tag_name: `v${version}`,
               name: beta ? `Castle ${base} beta ${beta}` : `Castle ${version}`,
-              body: beta
-                ? 'A beta build. Turn on the Beta update channel in Settings to get these automatically.'
-                : 'Download the file for your system below. Installed copies of Castle update themselves.',
+              body: notes + (beta
+                ? 'A beta build. Turn on the Beta update channel in Settings, Updates to get these automatically.'
+                : 'Download the file for your system below. Installed copies of Castle update themselves.'),
               draft: true,
               prerelease: !!beta,
             });

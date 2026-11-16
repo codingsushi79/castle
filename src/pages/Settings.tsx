@@ -6,6 +6,7 @@ import { importLegacyData } from "../lib/legacy";
 import { prettyCombo, recordNextCombo, SHORTCUTS, useShortcuts } from "../lib/shortcuts";
 import { call } from "../lib/storage";
 import { isBeta, useUpdates, versionLabel } from "../lib/updates";
+import { openWhatsNew } from "../components/WhatsNew";
 import { Progress } from "@mantine/core";
 import { getVersion } from "@tauri-apps/api/app";
 import { useEffect } from "react";
@@ -189,7 +190,7 @@ function UpdatesCard() {
     <div className="card" style={{ maxWidth: 640 }}>
       <Group justify="space-between">
         <div>
-          <Text size="sm">Castle {version && versionLabel(version)}</Text>
+          <Text size="sm">Castle {version && versionLabel(version)} <Button variant="subtle" size="compact-xs" onClick={openWhatsNew}>What's new</Button></Text>
           <Text size="xs" c="dimmed">
             {u.status === "checking" ? "Checking GitHub…" : u.status === "none" ? "You have the latest version." : u.status === "available" ? `Castle ${versionLabel(u.version!)} is available.` : u.status === "downloading" ? `Downloading… ${u.progress}%` : u.status === "ready" ? "Installed. Restarting…" : u.status === "error" ? `Could not update: ${u.error}` : "Updates come from the project's GitHub releases."}
           </Text>
