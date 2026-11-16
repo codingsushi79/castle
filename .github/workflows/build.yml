@@ -90,6 +90,15 @@ jobs:
         with:
           workspaces: src-tauri
       - run: npm ci
+      - name: Package types
+        id: bundles
+        shell: bash
+        run: |
+          # RPM versions can't contain "-", so a beta (2.3.0-1) skips the .rpm; .deb and AppImage take it.
+          version=$(node -p "require('./package.json').version")
+          if [[ "${{ matrix.platform }}" == ubuntu* && "$version" == *-* ]]; then
+            echo "args=--bundles deb,appimage" >> "$GITHUB_OUTPUT"
+          fi
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -100,7 +109,7 @@ jobs:
         with:
           releaseId: ${{ needs.create-release.outputs.release_id }}
           includeUpdaterJson: true
-          args: ${{ matrix.args }}
+          args: ${{ matrix.args }} ${{ steps.bundles.outputs.args }}
 
   publish-release:
     needs: [create-release, build]
