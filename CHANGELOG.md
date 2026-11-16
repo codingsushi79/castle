@@ -1,8 +1,8 @@
 # Castle changelog
 
-## 2.3.0-1
+## 2.3.0
 
-The first beta of Castle 2.3: a much bigger Castle Online.
+Castle 2.3: a much bigger Castle Online.
 
 ### Play online
 - **Variants online:** Chess960, Crazyhouse, Atomic, King of the Hill, Three-check, Antichess, Horde and Racing Kings, in quick pairing, private games, challenges and arenas.
@@ -22,6 +22,10 @@ The first beta of Castle 2.3: a much bigger Castle Online.
 ### Everything else
 - Board letters now sit in the corner of their squares, just like the numbers.
 - **What's new:** this window appears after each update, and you can open it again from Settings → Updates.
+
+## 2.3.0-1
+
+The first beta of Castle 2.3, with everything listed under 2.3.0.
 
 ## 2.2.1
 

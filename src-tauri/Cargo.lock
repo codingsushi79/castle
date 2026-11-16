@@ -461,7 +461,7 @@ dependencies = [
 
 [[package]]
 name = "castle"
-version = "2.3.0-1"
+version = "2.3.0"
 dependencies = [
  "base64 0.22.1",
  "keyring",
