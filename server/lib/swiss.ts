@@ -125,6 +125,8 @@ export const swissRoutes: Record<string, Handler> = {
     const rows = await sql`select s.*, (select count(*)::int from swiss_players p where p.swiss_id = s.id and not p.withdrawn) as players
       from swiss s where (status <> 'finished' and starts_at < ${now + 26 * 3600_000}) or (status = 'finished' and starts_at > ${now - 6 * 3600_000})
       order by starts_at limit 30`;
+    // A tournament past its start moves along here too (and ends at once if fewer than two joined).
+    for (const s of rows) if (s.status === "upcoming" && Number(s.starts_at) <= now) Object.assign(s, await advance(s));
     return json({ swisses: rows.map((s) => ({ ...swissInfo(s, now), players: s.players })) });
   },
 

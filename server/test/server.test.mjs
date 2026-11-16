@@ -182,6 +182,9 @@ await db.query("update games set updated_at = now() - interval '2 minutes' where
 const forfeit = await call(`game?id=${r2s[0].seat.id}`);
 ok(forfeit.result === "0-1" && forfeit.reason === "forfeit", "in a Swiss, not moving loses the game");
 ok((await call("swisses")).swisses.some((s) => s.name === "Daily Swiss"), "a Daily Swiss is scheduled");
+const lonely = await call("swiss/create", { token: C.token, name: "Cy", title: "Lonely Swiss", minutes: 3, increment: 0, rounds: 3, startsIn: 5 });
+await db.query("update swiss set starts_at = $1 where id = $2", [Date.now() - 1000, lonely.id]);
+ok((await call("swisses")).swisses.find((s) => s.id === lonely.id)?.status === "finished", "a Swiss nobody joined ends at its start time, even if only the list is opened");
 
 section("Checked puzzle rush and battles");
 const rush = await call("race/rush", { token: A.token, name: "Ann", minutes: 3 });
