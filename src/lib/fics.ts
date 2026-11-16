@@ -42,7 +42,14 @@ interface State {
   pending?: Move;
   confirm: boolean;
   record: GameTree;
-  connect: (password: string) => void;
+  /** Whether a FICS password is stored in the keychain for this username. */
+  saved: boolean;
+  /** Connects. With remember, a password that FICS accepts is stored in the keychain. */
+  connect: (password: string, remember?: boolean) => void;
+  /** Logs in with the keychain password, if there is one. Resolves false when there is none. */
+  quickConnect: () => Promise<boolean>;
+  /** Removes the stored password. */
+  forget: () => void;
   disconnect: () => void;
   send: (command: string) => void;
   play: (move: Move) => void;
@@ -53,6 +60,9 @@ interface State {
 
 let buffer = "";
 let password = "";
+/** The password of the login in progress, kept until FICS accepts or rejects it. */
+let attempt: { password: string; remember: boolean; fromKeychain: boolean } | undefined;
+const KEYCHAIN = "ficsPassword";
 let sentUser = false;
 let sentPassword = false;
 let sentReturn = false;
@@ -132,9 +142,19 @@ export const useFics = create<State>((set, get) => {
       if (line.includes("**** Starting FICS session as ")) {
         const name = line.replace("**** Starting FICS session as ", "").replace(" ****", "");
         set({ handle: name.split("(")[0].trim(), state: "online" });
+        if (attempt?.remember && !s.guest && attempt.password) {
+          call("secret_set", { key: KEYCHAIN, value: `${s.username}\n${attempt.password}` }).catch(() => {});
+          set({ saved: true });
+        }
+        attempt = undefined;
         for (const c of ["set style 12", "set interface Castle", "set bell 0", "set seek 0"]) raw(c);
         get().refreshSeeks();
-      } else if (line.toLowerCase().includes("invalid password")) set({ error: "Invalid password." });
+      } else if (line.toLowerCase().includes("invalid password")) {
+        set({ error: "Invalid password." });
+        // A stored password that no longer works is dropped, so the next visit asks again.
+        if (attempt?.fromKeychain) get().forget();
+        attempt = undefined;
+      }
       else if (line.toLowerCase().includes("press return to enter the server") && !sentReturn) {
         sentReturn = true;
         raw("");
@@ -227,7 +247,8 @@ export const useFics = create<State>((set, get) => {
   return {
     state: "disconnected",
     username: load("ficsUser", ""),
-    guest: true,
+    guest: load("ficsGuest", true),
+    saved: false,
     handle: "",
     console: [],
     seeks: [],
@@ -239,17 +260,37 @@ export const useFics = create<State>((set, get) => {
       set(p);
       if (p.confirm !== undefined) save("ficsConfirm", p.confirm);
       if (p.username !== undefined) save("ficsUser", p.username);
+      if (p.guest !== undefined) save("ficsGuest", p.guest);
     },
-    connect: (pw) => {
+    connect: (pw, remember = false) => {
       if (get().state !== "disconnected") return;
       wire();
       password = pw;
+      attempt = { password: pw, remember, fromKeychain: false };
       buffer = "";
       sentUser = sentPassword = sentReturn = false;
       set({ state: "connecting", error: undefined, console: [{ text: "Connecting to freechess.org…", kind: "sys" }], seeks: [], game: undefined, result: undefined });
       call("fics_connect", { host: "freechess.org", port: 5000 })
         .then(() => set({ state: "loggingIn" }))
         .catch((e) => set({ state: "disconnected", error: `Can't reach freechess.org: ${e}` }));
+    },
+    quickConnect: async () => {
+      const stored = await call<string | null>("secret_get", { key: KEYCHAIN }).catch(() => null);
+      const [user, pw] = stored ? [stored.slice(0, stored.indexOf("\n")), stored.slice(stored.indexOf("\n") + 1)] : [];
+      if (!user || !pw) {
+        set({ saved: false });
+        return false;
+      }
+      set({ saved: true, username: user, guest: false });
+      save("ficsUser", user);
+      save("ficsGuest", false);
+      get().connect(pw);
+      attempt = { password: pw, remember: false, fromKeychain: true };
+      return true;
+    },
+    forget: () => {
+      call("secret_set", { key: KEYCHAIN, value: null }).catch(() => {});
+      set({ saved: false });
     },
     disconnect: () => {
       if (get().state === "online") raw("quit");

@@ -31,6 +31,18 @@ jobs:
               draft: true,
               prerelease: false,
             });
+            // Wasabi's binaries go on every release, so Castle can download one when its bundle lacks it.
+            const fs = require('fs');
+            for (const name of fs.readdirSync('src-tauri/resources/wasabi')) {
+              await github.rest.repos.uploadReleaseAsset({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                release_id: data.id,
+                name,
+                data: fs.readFileSync(`src-tauri/resources/wasabi/${name}`),
+                headers: { 'content-type': 'application/octet-stream' },
+              });
+            }
             return data.id;
 
   build:
@@ -76,8 +88,7 @@ jobs:
         with:
           releaseId: ${{ needs.create-release.outputs.release_id }}
           includeUpdaterJson: true
-          # The private Wasabi engine is not in the repository; leave it out of the bundle.
-          args: ${{ matrix.args }} --config src-tauri/tauri.ci.conf.json
+          args: ${{ matrix.args }}
 
   publish-release:
     needs: [create-release, build]

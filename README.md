@@ -8,7 +8,11 @@ Built with [Tauri](https://tauri.app) (Rust) and React. The board is [chessgroun
 
 Get the latest version from [Releases](../../releases/latest). Castle checks for updates by itself (Settings, Updates).
 
-Castle uses any UCI engine you have installed: Stockfish, Leela Chess Zero, Fairy-Stockfish for variants, and others. The Engines page finds them and can install some with Homebrew.
+Castle comes with its own engine, Wasabi 2.1, and also uses any UCI engine you have installed: Stockfish, Leela Chess Zero, Fairy-Stockfish for variants, and others. The Engines page finds them and can install some with Homebrew.
+
+## Castle Online
+
+Play other Castle users with no account: everyone is a guest. Moves go directly between the two players, and the small server in `server/` (Vercel, Postgres) checks them, keeps the clocks, stores games for watching, and seals each guest's rating so it can't be edited.
 
 ## Building
 

@@ -3,14 +3,14 @@ import { notifications } from "@mantine/notifications";
 import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
 import {
   IconCloud, IconCopy, IconCpu, IconFolderOpen, IconLayoutGrid, IconMinus, IconPlayerPauseFilled, IconPlayerPlayFilled,
-  IconPlus, IconPrinter, IconLayoutColumns, IconGitBranch, IconChevronDown, IconChevronRight, IconBolt, IconShare2, IconShieldExclamation, IconTarget, IconX, IconClipboard, IconCrosshair, IconEraser,
+  IconPlus, IconPrinter, IconLayoutColumns, IconGitBranch, IconChevronDown, IconChevronRight, IconBolt, IconShare2, IconShieldExclamation, IconTarget, IconX, IconClipboard, IconCrosshair, IconEraser, IconArrowUpRight, IconArrowDownRight, IconUsersGroup,
 } from "@tabler/icons-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AutoArrow, Board } from "../components/Board";
 import { EvalBar, EvalChart, MoveList, NavBar, Panel } from "../components/common";
-import { PositionEditor } from "../components/Editor";
+import { paint, Placement, PlacementBar } from "../components/Placement";
 import { ExplorerPanel, TablebasePanel } from "../components/Explorer";
-import { useAnalysis } from "../lib/analysis";
+import { consensus, useAnalysis } from "../lib/analysis";
 import { Color, GameTree, GNode, moveFromUci, NAGS, sanLine, scoreText, splitPgn, tryPosition, variantName, winPercent } from "../lib/chess";
 import { makeSan } from "chessops/san";
 import { db } from "../lib/db";
@@ -119,7 +119,8 @@ function AnalysisBoard({ tree, compact }: { tree: GameTree; compact?: boolean })
   const a = useAnalysis(tree, revision);
   const [flipped, setFlipped] = useState(false);
   const [side, setSide] = useState<string>(load("analysisSide", "moves"));
-  const [editing, setEditing] = useState(false);
+  const [placing, setPlacing] = useState<Placement>();
+  const erasing = useRef(false);
   const [menu, setMenu] = useState<{ node: GNode; x: number; y: number }>();
   const [review, setReview] = useState<{ running: boolean; progress: number; summary?: ReviewSummary; report?: Report }>(() => {
     const summary = tree.mainline.some((n) => n.eval) ? summarise(tree) : undefined;
@@ -137,6 +138,7 @@ function AnalysisBoard({ tree, compact }: { tree: GameTree; compact?: boolean })
   useAction("board.start", () => tree.toStart());
   useAction("board.end", () => tree.toEnd());
   useAction("board.flip", () => setFlipped((f) => !f));
+  useAction("board.clearDrawings", () => { if (tree.current.shapes.length) { tree.current.shapes = []; tree.touch(); } });
   useAction("engine.toggle", () => a.setRunning(!a.running));
   useAction("engine.threat", () => { if (!a.running) a.setRunning(true); a.setThreat(!a.threat); });
   useAction("analysis.review", () => !review.running && startReview());
@@ -150,10 +152,27 @@ function AnalysisBoard({ tree, compact }: { tree: GameTree; compact?: boolean })
     return () => { live = false; clearTimeout(t); };
   }, [node.fen, tree.rules]);
 
+  // With two or more engines running, their lines are pooled into one ranking.
+  const together = useMemo(
+    () => (a.running && !a.threat && a.slots.length > 1 ? consensus(node.fen, tree.rules, a.slots, a.lines) : []),
+    [a.running, a.threat, a.slots, a.lines, node.fen, tree.rules],
+  );
+
+  // Every line gets an arrow of the same width; the best is the most solid and
+  // the weakest of the lines shown the faintest.
   const arrows: AutoArrow[] = useMemo(() => {
-    const src = a.running ? a.primary.slice(0, a.threat ? 1 : 3).map((l) => l.first) : cloud ? cloud.pvs.slice(0, 1).map((p) => p.moves[0]) : [];
-    return src.filter(Boolean).map((u, i) => ({ from: u.slice(0, 2), to: u.slice(2, 4), color: a.threat ? "red" : "paleBlue", strength: i === 0 ? 1 : 0.3 }));
-  }, [a.running, a.primary, a.threat, cloud]);
+    const src = a.running
+      ? (together.length ? together.map((m) => m.first) : a.primary.map((l) => l.first)).slice(0, a.threat ? 1 : a.multipv)
+      : cloud ? cloud.pvs.map((p) => p.moves[0]) : [];
+    const moves = [...new Set(src.filter(Boolean))];
+    const n = moves.length;
+    return moves.map((u, i) => ({
+      from: u.slice(0, 2), to: u.slice(2, 4),
+      color: a.threat ? "red" : "paleBlue",
+      strength: 0.7,
+      opacity: n > 1 ? 0.9 - (0.7 * i) / (n - 1) : 0.9,
+    }));
+  }, [a.running, a.primary, a.threat, a.multipv, together, cloud]);
 
   const opening = openingFor(tree);
 
@@ -186,7 +205,7 @@ function AnalysisBoard({ tree, compact }: { tree: GameTree; compact?: boolean })
     <div className="page">
       <div className="boardcol">
         <div className="toolbar" style={{ margin: "-14px -16px 6px", borderBottom: "1px solid var(--border)" }}>
-          <Tooltip label="Set up a position"><ActionIcon variant="subtle" color="gray" onClick={() => setEditing(true)}><IconLayoutGrid size={17} /></ActionIcon></Tooltip>
+          <Tooltip label="Place pieces: set up any position"><ActionIcon variant={placing ? "filled" : "subtle"} color={placing ? undefined : "gray"} onClick={() => setPlacing(placing ? undefined : { board: node.fen.split(" ")[0], turn: node.turn, tool: "move" })}><IconLayoutGrid size={17} /></ActionIcon></Tooltip>
           <Tooltip label="Open a PGN file"><ActionIcon variant="subtle" color="gray" onClick={openPgnFile}><IconFolderOpen size={17} /></ActionIcon></Tooltip>
           <Tooltip label="Paste a FEN or PGN"><ActionIcon variant="subtle" color="gray" onClick={pasteGame}><IconClipboard size={17} /></ActionIcon></Tooltip>
           <Menu shadow="md" position="bottom-start">
@@ -228,16 +247,38 @@ function AnalysisBoard({ tree, compact }: { tree: GameTree; compact?: boolean })
         </div>
         <div className="boardrow">
           <EvalBar score={a.score ?? cloud?.pvs[0]?.score} flipped={flipped} />
-          <Board fen={node.fen} rules={tree.rules} chess960={tree.chess960} orientation={orientation} movable="both" lastMove={node.lastMove}
-            shapes={node.shapes} arrows={arrows}
-            onShapes={(shapes) => { node.shapes = shapes; tree.revision++; }}
-            onMove={(m) => { const n = tree.play(m); if (n) Sound.forSan(n.san); }} />
+          {placing ? (
+            <Board fen={`${placing.board} ${placing.turn === "white" ? "w" : "b"} - - 0 1`} orientation={orientation} free
+              onPlacement={(board) => setPlacing((p) => p && { ...p, board })}
+              onPaint={placing.tool === "move" ? undefined : (square, start) => setPlacing((p) => {
+                if (!p) return p;
+                const r = paint(p, square, start, erasing.current);
+                erasing.current = r.erasing;
+                return { ...p, board: r.board };
+              })} />
+          ) : (
+            <Board fen={node.fen} rules={tree.rules} chess960={tree.chess960} orientation={orientation} movable="both" lastMove={node.lastMove}
+              shapes={node.shapes} arrows={arrows}
+              onShapes={(shapes) => { node.shapes = shapes; tree.revision++; }}
+              onMove={(m) => { const n = tree.play(m); if (n) Sound.forSan(n.san); }} />
+          )}
         </div>
+        {placing ? (
+          <PlacementBar p={placing} onChange={setPlacing} onCancel={() => setPlacing(undefined)} onDone={(fen) => {
+            setPlacing(undefined);
+            const fresh = new GameTree(fen);
+            // An empty board is replaced in place; a tab with moves keeps its game and the position opens beside it.
+            if (!tree.root.children.length) {
+              useApp.setState((s) => ({ tabs: s.tabs.map((t) => (t.tree === tree ? { id: fresh.id, tree: fresh } : t)), active: fresh.id }));
+            } else app.openGame(fresh);
+          }} />
+        ) : (
         <Group gap={8} justify="center">
           <NavBar tree={tree} onFlip={() => setFlipped(!flipped)} />
           <Button variant={a.threat ? "filled" : "default"} color="red" leftSection={<IconShieldExclamation size={14} />} onClick={() => { if (!a.running) a.setRunning(true); a.setThreat(!a.threat); }}>Threat</Button>
-          {node.shapes.length > 0 && <Button variant="default" leftSection={<IconEraser size={14} />} onClick={() => { node.shapes = []; tree.touch(); }}>Clear drawings</Button>}
+          {node.shapes.length > 0 && <Tooltip label="Shortcut: C"><Button variant="default" leftSection={<IconEraser size={14} />} onClick={() => { node.shapes = []; tree.touch(); }}>Clear drawings</Button></Tooltip>}
         </Group>
+        )}
       </div>
 
       <div className="sidecol" style={compact ? { width: 330 } : undefined}>
@@ -254,6 +295,27 @@ function AnalysisBoard({ tree, compact }: { tree: GameTree; compact?: boolean })
           }>
           {a.error && <Text size="xs" c="red">{a.error}</Text>}
           {a.threat && a.running && <Text size="xs" c="red" fw={600} mb={4}>{a.threatBlocked ? "No threat to show while in check" : "Showing the opponent's threat"}</Text>}
+          {together.length > 0 && (
+            <div style={{ marginBottom: 8 }}>
+              <div className="row" style={{ marginBottom: 2 }}>
+                <Text size="xs" fw={700}><IconUsersGroup size={12} style={{ verticalAlign: -2 }} /> Consensus</Text>
+                <Text size="xs" c="dimmed">{a.slots.length} engines pooled</Text>
+              </div>
+              {together.slice(0, a.multipv).map((m) => (
+                <div key={m.first} className="pvline" onClick={() => tree.play(m.first)} title="Play this move">
+                  <span className={"score " + (winPercent(m.score) >= 50 ? "w" : "b")}>{scoreText(m.score)}</span>
+                  <span className="san"><b>{m.san}</b> <span style={{ opacity: 0.6 }}>{m.backers}/{a.slots.length} engines</span></span>
+                  {Math.abs(m.shift) >= 0.5 && (
+                    <Tooltip label={`${m.shift > 0 ? "Better" : "Worse"} than ${a.slots[0].name} alone thought, in winning chances`}>
+                      <Text size="xs" fw={700} c={m.shift > 0 ? "teal" : "red"} style={{ flex: "none" }}>
+                        {m.shift > 0 ? <IconArrowUpRight size={12} /> : <IconArrowDownRight size={12} />}{Math.abs(m.shift).toFixed(0)}%
+                      </Text>
+                    </Tooltip>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
           {a.running ? a.slots.map((slot) => {
             const ls = a.lines[slot.key] ?? [];
             const best = ls[0];
@@ -377,7 +439,6 @@ function AnalysisBoard({ tree, compact }: { tree: GameTree; compact?: boolean })
         </Menu.Dropdown>
       </Menu>
       {study && <StudyModal mode={study} tree={tree} onClose={() => setStudy(undefined)} />}
-      {editing && <PositionEditor opened purpose="setup" initial={node.fen} onClose={() => setEditing(false)} onDone={(fen) => app.openGame(new GameTree(fen))} />}
     </div>
   );
 }

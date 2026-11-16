@@ -106,7 +106,8 @@ struct Progress {
 /// Downloads a file into the app's data folder. Only the hosts Castle fetches
 /// tablebases and network weights from are allowed.
 #[tauri::command]
-pub fn download(app: AppHandle, id: String, url: String, dest: String) -> Result<(), String> {
+/// With `executable`, the downloaded file is made runnable (an engine binary).
+pub fn download(app: AppHandle, id: String, url: String, dest: String, executable: Option<bool>) -> Result<(), String> {
     const HOSTS: [&str; 4] = ["https://tablebase.lichess.ovh/", "https://github.com/", "https://raw.githubusercontent.com/", "https://objects.githubusercontent.com/"];
     if !HOSTS.iter().any(|h| url.starts_with(h)) {
         return Err("That download location is not allowed.".into());
@@ -143,6 +144,13 @@ pub fn download(app: AppHandle, id: String, url: String, dest: String) -> Result
             }
             drop(file);
             std::fs::rename(&tmp, &target).map_err(|e| e.to_string())?;
+            #[cfg(unix)]
+            if executable.unwrap_or(false) {
+                use std::os::unix::fs::PermissionsExt;
+                std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o755)).map_err(|e| e.to_string())?;
+            }
+            #[cfg(not(unix))]
+            let _ = executable;
             Ok((received, total))
         };
         match run() {

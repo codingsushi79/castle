@@ -56,7 +56,11 @@ function Tv({ evalOn }: { evalOn: boolean }) {
   const [game, setGame] = useState<{ id: string; orientation: Color; players: Record<Color, { name: string; rating?: number; title?: string }> }>();
   const [fen, setFen] = useState<string>();
   const [last, setLast] = useState<[string, string]>();
-  const [clocks, setClocks] = useState<Record<Color, number>>({ white: 0, black: 0 });
+  // Clock readings as the feed last sent them, and when. The side to move counts
+  // down locally between updates.
+  const [clocks, setClocks] = useState<{ white?: number; black?: number; at: number }>({ at: Date.now() });
+  const [, tick] = useState(0);
+  useEffect(() => { const t = setInterval(() => tick((n) => n + 1), 200); return () => clearInterval(t); }, []);
   const [error, setError] = useState<string>();
   const { score, line } = useSpectatorEngine(fen, evalOn);
   const app = useApp();
@@ -65,6 +69,9 @@ function Tv({ evalOn }: { evalOn: boolean }) {
     const abort = new AbortController();
     setError(undefined);
     setFen(undefined);
+    setGame(undefined);
+    setLast(undefined);
+    setClocks({ at: Date.now() });
     const url = channel === "best" ? "https://lichess.org/api/tv/feed" : `https://lichess.org/api/tv/${channel}/feed`;
     ndjson(url, (o) => {
       if (o.t === "featured") {
@@ -73,11 +80,14 @@ function Tv({ evalOn }: { evalOn: boolean }) {
         setGame({ id: o.d.id, orientation: o.d.orientation, players });
         setFen(o.d.fen.includes(" ") ? o.d.fen : `${o.d.fen} w - - 0 1`);
         setLast(undefined);
+        // A new featured game: take its clocks, never the previous game's.
+        const seconds = (c: Color) => o.d.players.find((p: any) => p.color === c)?.seconds;
+        setClocks({ white: seconds("white"), black: seconds("black"), at: Date.now() });
       } else if (o.t === "fen") {
         // The feed gives the placement and side to move only.
         setFen(o.d.fen.split(" ").length >= 2 ? `${o.d.fen} - - 0 1` : `${o.d.fen} w - - 0 1`);
         if (o.d.lm) setLast([o.d.lm.slice(0, 2), o.d.lm.slice(2, 4)]);
-        setClocks({ white: o.d.wc ?? 0, black: o.d.bc ?? 0 });
+        setClocks({ white: o.d.wc, black: o.d.bc, at: Date.now() });
       }
     }, { signal: abort.signal, auth: false }).catch((e) => e.name !== "AbortError" && setError(e.message));
     return () => abort.abort();
@@ -85,7 +95,14 @@ function Tv({ evalOn }: { evalOn: boolean }) {
 
   const o = game?.orientation ?? "white";
   const top: Color = o === "white" ? "black" : "white";
-  const strip = (c: Color) => <PlayerStrip name={`${game?.players[c].title ? game.players[c].title + " " : ""}${game?.players[c].name ?? "…"}`} color={c} detail={game?.players[c].rating ? String(game.players[c].rating) : undefined} clock={clocks[c]} active={!!fen && turnOf(fen) === c} />;
+  const shownClock = (c: Color) => {
+    const base = clocks[c];
+    if (base === undefined) return undefined;
+    // Count down only once both sides have moved, as Lichess does.
+    const running = !!fen && turnOf(fen) === c && !!last;
+    return running ? Math.max(0, base - (Date.now() - clocks.at) / 1000) : base;
+  };
+  const strip = (c: Color) => <PlayerStrip name={`${game?.players[c].title ? game.players[c].title + " " : ""}${game?.players[c].name ?? "…"}`} color={c} detail={game?.players[c].rating ? String(game.players[c].rating) : undefined} clock={shownClock(c)} active={!!fen && turnOf(fen) === c} />;
   return (
     <div className="page">
       <div className="boardcol">

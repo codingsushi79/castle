@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { GameTree, negate, sanLine, Score, tryPosition, turnOf } from "./chess";
+import { GameTree, negate, sanLine, Score, tryPosition, turnOf, winPercent } from "./chess";
 import { launch, resolveEngine } from "./engines";
 import { cachedEval, storeEval } from "./review";
 import { Engine } from "./uci";
@@ -162,4 +162,73 @@ export function useAnalysis(tree: GameTree, revision: number) {
     addEngine: (engineId: string) => setSlots((s) => (s.length >= 4 ? s : [...s, { key: slotKey++, engineId, name: resolveEngine(engineId)?.name ?? "Engine" }])),
     removeSlot: (key: number) => setSlots((s) => (s.length > 1 ? s.filter((x) => x.key !== key) : s)),
   };
+}
+
+/** One candidate move after every running engine has had its say. */
+export interface ConsensusMove {
+  first: string;
+  san: string;
+  /** Winning chances for the side to move, 0–100, averaged over the engines. */
+  win: number;
+  /** The same, as an evaluation from White's point of view. */
+  score: Score;
+  /** How many engines list the move among their lines. */
+  backers: number;
+  /** Change in winning chances against the first engine's own view of the move:
+   *  positive when the other engines rate it higher, negative when lower. */
+  shift: number;
+  pv: string[];
+}
+
+/** Evaluation (White's view) that gives these winning chances for the side to move. */
+function scoreFromWin(win: number, whiteToMove: boolean): Score {
+  const w = Math.max(0.5, Math.min(99.5, win)) / 100;
+  // Inverse of winPercent: 50 + 50 * (2 / (1 + e^(-k·cp)) - 1).
+  const cp = Math.round(-Math.log(1 / w - 1) / 0.00368208);
+  return { cp: whiteToMove ? cp : -cp };
+}
+
+/**
+ * Pools the lines of several engines into one ranking. Each engine scores every
+ * candidate: moves it lists get its own winning chances; moves it does not list
+ * get a little less than its weakest line, since it ranked them below that.
+ * Engines are weighted by search depth, so a deep engine counts for more than a
+ * shallow one. Moves several engines like rise; moves only one engine likes fall.
+ */
+export function consensus(fen: string, rules: GameTree["rules"], slots: Slot[], lines: Record<number, Line[]>): ConsensusMove[] {
+  const whiteToMove = turnOf(fen) === "white";
+  const mine = (s: Score) => (whiteToMove ? winPercent(s) : 100 - winPercent(s));
+  const views = slots
+    .map((s) => lines[s.key] ?? [])
+    .filter((ls) => ls.length > 0)
+    .map((ls) => {
+      const byMove = new Map<string, number>();
+      const scores = new Map<string, Score>();
+      for (const l of ls) if (l.first && !byMove.has(l.first)) { byMove.set(l.first, mine(l.score)); scores.set(l.first, l.score); }
+      const floor = Math.min(...byMove.values());
+      const depth = Math.max(...ls.map((l) => l.depth));
+      return { ls, byMove, scores, floor, weight: Math.max(1, depth) };
+    });
+  if (views.length < 2) return [];
+  const moves = new Map<string, string[]>();
+  for (const v of views) for (const l of v.ls) if (l.first && !moves.has(l.first)) moves.set(l.first, l.pv);
+  const total = views.reduce((n, v) => n + v.weight, 0);
+  const out: ConsensusMove[] = [];
+  for (const [first, pv] of moves) {
+    let sum = 0, backers = 0;
+    const said = (v: (typeof views)[number]) => v.byMove.get(first) ?? Math.max(0, v.floor - 4);
+    for (const v of views) {
+      if (v.byMove.has(first)) backers++;
+      sum += said(v) * v.weight;
+    }
+    const before = said(views[0]);
+    const win = sum / total;
+    // When every engine sees a forced mate, show the mate rather than a pawn count.
+    const mates = views.map((v) => v.scores.get(first)).filter((s): s is { mate: number } => !!s && "mate" in s);
+    const score: Score = mates.length === views.length && mates.every((m) => Math.sign(m.mate) === Math.sign(mates[0].mate))
+      ? mates.reduce((a, b) => (Math.abs(b.mate) < Math.abs(a.mate) ? b : a))
+      : scoreFromWin(win, whiteToMove);
+    out.push({ first, pv, win, backers, shift: win - before, score, san: sanLine(fen, pv, rules, 1).replace(/^\d+\.(\.\.|…)?\s*/, "") });
+  }
+  return out.sort((a, b) => b.win - a.win || b.backers - a.backers);
 }

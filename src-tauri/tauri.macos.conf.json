@@ -5,7 +5,7 @@
       "dmg"
     ],
     "resources": {
-      "resources/wasabi-2.1": "wasabi-2.1"
+      "resources/wasabi/wasabi-2.1-macos": "wasabi-2.1"
     },
     "macOS": {
       "signingIdentity": "8A545233A477714A03890D3CCA7E952E67A8A9C9",

@@ -1,3 +1,4 @@
+import { listen } from "@tauri-apps/api/event";
 import { homeDir } from "@tauri-apps/api/path";
 import { create } from "zustand";
 import { call, load, save } from "./storage";
@@ -30,6 +31,36 @@ const KNOWN: { id: string; name: string; summary: string; bins: string[]; formul
   { id: "fairy-stockfish", name: "Fairy-Stockfish", summary: "Stockfish derivative that plays every chess variant in Castle.", bins: ["fairy-stockfish"], formula: "fairy-stockfish" },
 ];
 
+/** Wasabi's file name inside the app bundle and the data folder. */
+export const WASABI_FILE = PLATFORM === "windows" ? "wasabi-2.1.exe" : "wasabi-2.1";
+
+/** Where each system's Wasabi binary is published: an asset on every Castle release. */
+export function wasabiDownloadUrl(): string | undefined {
+  const arm = /arm|aarch64/i.test(navigator.userAgent);
+  const asset = PLATFORM === "mac" ? "wasabi-2.1-macos" : PLATFORM === "windows" ? "wasabi-2.1-windows-x64.exe" : arm ? "wasabi-2.1-linux-arm64" : "wasabi-2.1-linux-x64";
+  return `https://github.com/codingsushi79/castle/releases/latest/download/${asset}`;
+}
+
+/** Downloads Wasabi into the data folder; resolves when it is ready, then rescans. */
+export async function downloadWasabi(onProgress?: (received: number, total: number) => void): Promise<void> {
+  const dir = await call<string>("app_dir", { sub: "engines" });
+  const dest = `${dir}${PLATFORM === "windows" ? "\\" : "/"}${WASABI_FILE}`;
+  const id = `wasabi-${Date.now()}`;
+  let unlisten: (() => void) | undefined;
+  await new Promise<void>((resolve, reject) => {
+    listen<{ id: string; received: number; total: number; done: boolean; error?: string }>("download-progress", (e) => {
+      if (e.payload.id !== id) return;
+      if (!e.payload.done) return onProgress?.(e.payload.received, e.payload.total);
+      if (e.payload.error) reject(new Error(e.payload.error));
+      else resolve();
+    }).then((f) => {
+      unlisten = f;
+      call("download", { id, url: wasabiDownloadUrl(), dest, executable: true }).catch(reject);
+    }, reject);
+  }).finally(() => unlisten?.());
+  await useEngines.getState().refresh();
+}
+
 interface EngineStore {
   engines: EngineEntry[];
   defaultId: string;
@@ -52,24 +83,25 @@ export const useEngines = create<EngineStore>((set, get) => ({
     } catch {
       /* not in the app shell */
     }
+    const sep = PLATFORM === "windows" ? "\\" : "/";
     const dirs = PLATFORM === "windows"
       ? [`${home}\\AppData\\Local\\Castle\\Engines`, "C:\\Program Files\\Stockfish", "C:\\Program Files\\lc0", `${home}\\scoop\\shims`, "C:\\ProgramData\\chocolatey\\bin", `${home}\\Downloads`]
       : PLATFORM === "linux"
         ? ["/usr/games", "/usr/bin", "/usr/local/bin", `${home}/.local/bin`, `${home}/.local/share/Castle/Engines`, "/snap/bin", "/var/lib/flatpak/exports/bin"]
         : ["/opt/homebrew/bin", "/usr/local/bin", `${home}/code/stockapi/engines/bin`, `${home}/Library/Application Support/Castle/Engines`, `${home}/.local/bin`, "/usr/bin"];
-    const sep = PLATFORM === "windows" ? "\\" : "/";
     const exe = (b: string) => (PLATFORM === "windows" ? [`${b}.exe`, `${b}-windows-x86-64.exe`, `${b}-windows-x86-64-avx2.exe`] : [b]);
     const overrides = load<Record<string, string>>("enginePaths", {});
     const custom = load<EngineEntry[]>("customEngines", []);
-    // Castle keeps its own copy of Wasabi in the data folder; the app bundle may not have one.
+    // Wasabi ships inside the app. A copy downloaded from the releases into the data
+    // folder is used when the bundle has none (older or source builds).
     const dataDir = await call<string>("app_dir", { sub: "engines" }).catch(() => "");
-    const bundled = await call<string>("resource_path", { name: "wasabi-2.1" }).catch(() => "");
-    const copies = await call<string[]>("scan_paths", { paths: [dataDir && `${dataDir}/wasabi-2.1`, bundled].filter(Boolean) }).catch(() => [] as string[]);
+    const bundled = await call<string>("resource_path", { name: WASABI_FILE }).catch(() => "");
+    const copies = await call<string[]>("scan_paths", { paths: [bundled, dataDir && `${dataDir}${sep}${WASABI_FILE}`].filter(Boolean) }).catch(() => [] as string[]);
     const wasabi = copies[0] ?? "";
     const candidates = [wasabi, ...Object.values(overrides), ...custom.map((c) => c.path ?? ""), ...KNOWN.flatMap((k) => dirs.flatMap((d) => k.bins.flatMap(exe).map((b) => `${d}${sep}${b}`)))];
     const found = new Set(await call<string[]>("scan_paths", { paths: candidates.filter(Boolean) }).catch(() => [] as string[]));
     const list: EngineEntry[] = [
-      ...(PLATFORM === "mac" && wasabi ? [{ id: "wasabi", name: "Wasabi 2.1", summary: "Castle's built-in engine. NNUE evaluation, runs with no setup.", path: found.has(wasabi) ? wasabi : undefined, bundled: true }] : []),
+      { id: "wasabi", name: "Wasabi 2.1", summary: "Castle's built-in engine. NNUE evaluation, runs with no setup.", path: wasabi && found.has(wasabi) ? wasabi : undefined, bundled: true },
     ];
     for (const k of KNOWN) {
       let path = overrides[k.id] && found.has(overrides[k.id]) ? overrides[k.id] : undefined;

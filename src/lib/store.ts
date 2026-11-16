@@ -4,7 +4,7 @@ import { GameTree } from "./chess";
 import { load, save } from "./storage";
 
 export type Page =
-  | "play" | "lichess" | "fics" | "watch" | "matches" | "analysis" | "puzzles" | "training"
+  | "play" | "online" | "lichess" | "fics" | "watch" | "matches" | "analysis" | "puzzles" | "training"
   | "repertoire" | "progress" | "library" | "accounts" | "engines" | "settings";
 
 export interface Settings {

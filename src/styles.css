@@ -91,12 +91,23 @@ cg-board square.hl-red { background-color: rgba(220, 60, 60, .55); }
 cg-board square.hl-blue { background-color: rgba(60, 120, 230, .5); }
 .cg-wrap piece, .piece-img { background-size: cover; }
 .piece-img { display: inline-block; flex: none; }
-.cg-wrap coords { font-weight: 700; font-size: 10px; }
+/* Coordinates inside the edge squares: ranks top-left on the left file, files
+   bottom-right on the bottom rank, drawn over the pieces and sized with the board. */
+.board-square { container-type: inline-size; }
+.board-square .cg-wrap coords { font-weight: 700; font-size: clamp(10px, 3cqw, 17px); opacity: 1; z-index: 3; font-family: ui-rounded, system-ui, sans-serif; line-height: 1; }
+.board-square .cg-wrap coords.ranks { left: 0; top: 0; width: 12.5%; height: 100%; }
+.board-square .cg-wrap coords.ranks coord { transform: none; padding: 1.5% 0 0 3%; flex: 1 1 0; }
+.board-square .cg-wrap coords.files { left: 0; bottom: 0; width: 100%; height: 12.5%; align-items: flex-end; text-transform: none; }
+.board-square .cg-wrap coords.files coord { text-align: right; padding: 0 3% 1.5% 0; flex: 1 1 0; }
 .promotion { position: absolute; inset: 0; background: #0007; display: grid; place-items: center; z-index: 20; border-radius: 4px; animation: pop .15s ease-out; }
 .promotion > div { display: flex; gap: 6px; padding: 10px; background: var(--bg-raised); border-radius: 12px; box-shadow: 0 10px 30px #000a; }
 .promotion button { border: 0; background: #ffffff10; border-radius: 8px; padding: 4px; cursor: pointer; transition: transform .1s, background .1s; }
 .promotion button:hover { background: #ffffff25; transform: scale(1.06); }
 @keyframes pop { from { opacity: 0; transform: scale(.9); } to { opacity: 1; transform: none; } }
+.placement-bar { padding: 4px 0; }
+.placement-tool { border: 0; border-radius: 6px; padding: 3px; background: var(--bg-raised); color: inherit; display: grid; place-items: center; width: 34px; height: 34px; }
+.placement-tool[data-on] { background: var(--mantine-primary-color-filled); color: #fff; }
+.paint-layer { position: absolute; inset: 0; z-index: 10; cursor: copy; }
 .drop-layer { position: absolute; inset: 0; z-index: 10; cursor: crosshair; background: #1a9a7a22; }
 .pocket { display: flex; gap: 4px; height: 38px; }
 .pocket button { display: flex; align-items: center; gap: 2px; border: 1px solid var(--border); background: var(--bg-raised); color: #ddd; border-radius: 6px; padding: 0 6px; cursor: pointer; }

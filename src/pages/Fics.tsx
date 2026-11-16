@@ -6,17 +6,28 @@ import { Empty, Panel, PlayerStrip } from "../components/common";
 import { Color, fenOf, materialBalance, positionOf, turnOf } from "../lib/chess";
 import { useFics } from "../lib/fics";
 import { useApp } from "../lib/store";
+import { load } from "../lib/storage";
 
 export default function FicsPage() {
   const f = useFics();
   return f.state === "online" ? <Session /> : <Login />;
 }
 
+/** The keychain login is tried once per launch, the first time this page opens. */
+let triedKeychain = false;
+
 function Login() {
   const f = useFics();
   const [password, setPassword] = useState("");
+  const [remember, setRemember] = useState(true);
   const busy = f.state !== "disconnected";
-  const connect = () => { f.connect(f.guest ? "" : password); setPassword(""); };
+  const connect = () => { f.connect(f.guest ? "" : password, !f.guest && remember); setPassword(""); };
+  useEffect(() => {
+    if (triedKeychain) return;
+    triedKeychain = true;
+    if (!load("ficsGuest", true)) f.quickConnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   return (
     <div className="page" style={{ alignItems: "center", justifyContent: "center" }}>
       <div className="stagger" style={{ width: 380, textAlign: "center" }}>
@@ -29,12 +40,19 @@ function Login() {
             <>
               <TextInput mt="sm" placeholder="Username" value={f.username} onChange={(e) => f.set({ username: e.currentTarget.value })} />
               <PasswordInput size="xs" mt={6} placeholder="Password" value={password} onChange={(e) => setPassword(e.currentTarget.value)} onKeyDown={(e) => e.key === "Enter" && connect()} />
+              <Switch size="xs" mt={8} label="Remember me (keychain)" checked={remember} onChange={(e) => setRemember(e.currentTarget.checked)} />
+              {f.saved && (
+                <Group gap={6} mt={8}>
+                  <Button size="xs" variant="light" loading={busy} onClick={() => f.quickConnect()}>Log in as {f.username}</Button>
+                  <Button size="xs" variant="subtle" color="gray" onClick={() => f.forget()}>Forget</Button>
+                </Group>
+              )}
             </>
           )}
           <Button fullWidth mt="sm" size="md" loading={busy} disabled={!f.guest && (!f.username || !password)} onClick={connect}>Connect</Button>
           {f.error && <Alert color="red" mt="sm" p="xs">{f.error}</Alert>}
         </div>
-        <Text size="xs" c="dimmed" mt="sm">The connection is plain telnet, as FICS requires. Your password is sent once and never stored.</Text>
+        <Text size="xs" c="dimmed" mt="sm">The connection is plain telnet, as FICS requires. With Remember me on, the password is kept in your system keychain and Castle logs in by itself next time.</Text>
       </div>
     </div>
   );

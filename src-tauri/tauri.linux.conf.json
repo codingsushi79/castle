@@ -1,0 +1,7 @@
+{
+  "bundle": {
+    "resources": {
+      "resources/wasabi/wasabi-2.1-linux-x64": "wasabi-2.1"
+    }
+  }
+}

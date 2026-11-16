@@ -3,7 +3,8 @@ import { listen } from "@tauri-apps/api/event";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { IconAdjustments, IconCpu, IconDatabase, IconDownload, IconFolder, IconPackage, IconPlus, IconRefresh, IconStar, IconStarFilled, IconTool, IconTrash } from "@tabler/icons-react";
 import { useEffect, useState } from "react";
-import { EngineEntry, engineOptions, launch, PLATFORM, setEngineOptions, useEngines } from "../lib/engines";
+import { downloadWasabi, EngineEntry, engineOptions, launch, PLATFORM, setEngineOptions, useEngines } from "../lib/engines";
+import { notifications } from "@mantine/notifications";
 import { cacheSize, clearEvalCache } from "../lib/review";
 import { call, isTauri, load, save } from "../lib/storage";
 import { useApp } from "../lib/store";
@@ -17,6 +18,7 @@ export default function EnginesPage() {
   const [info, setInfo] = useState<Record<string, { name: string; options: UciOption[] }>>({});
   const [configuring, setConfiguring] = useState<EngineEntry>();
   const [installing, setInstalling] = useState<Record<string, string>>({});
+  const [wasabiState, setWasabiState] = useState<number>();
 
   // Ask each installed engine for its real name and options.
   useEffect(() => {
@@ -65,7 +67,7 @@ export default function EnginesPage() {
         {engines.map((e) => {
           const isDefault = defaultId === e.id;
           const Icon = e.bundled ? IconPackage : e.custom ? IconTool : IconCpu;
-          const progress = e.formula ? installing[e.formula] : undefined;
+          const progress = e.formula ? installing[e.formula] : e.id === "wasabi" && wasabiState !== undefined ? `Downloading… ${Math.round(wasabiState * 100)}%` : undefined;
           return (
             <div key={e.id} className="card" style={{ opacity: e.path ? 1 : 0.75, borderColor: isDefault ? "var(--mantine-primary-color-filled)" : undefined }}>
               <Group gap={10} wrap="nowrap" mb={6}>
@@ -86,6 +88,11 @@ export default function EnginesPage() {
                     <Button variant="default" disabled={isDefault} leftSection={isDefault ? <IconStarFilled size={13} /> : <IconStar size={13} />} onClick={() => setDefault(e.id)}>{isDefault ? "Default" : "Set default"}</Button>
                     <Tooltip label="Engine options"><ActionIcon variant="default" disabled={!info[e.id]} onClick={() => setConfiguring(e)}><IconAdjustments size={15} /></ActionIcon></Tooltip>
                   </>
+                ) : e.id === "wasabi" ? (
+                  <Button variant="light" leftSection={<IconDownload size={14} />} loading={wasabiState !== undefined} onClick={() => {
+                    setWasabiState(0);
+                    downloadWasabi((r, t) => setWasabiState(t ? r / t : 0)).then(() => setWasabiState(undefined), (err) => { setWasabiState(undefined); notifications.show({ color: "red", message: `Could not download Wasabi: ${err.message ?? err}` }); });
+                  }}>Download Wasabi</Button>
                 ) : e.formula && PLATFORM === "mac" ? (
                   <Button variant="light" leftSection={<IconDownload size={14} />} loading={progress !== undefined} onClick={() => { setInstalling((m) => ({ ...m, [e.formula!]: "" })); call("brew_install", { formula: e.formula }).catch(() => setInstalling((m) => { const n = { ...m }; delete n[e.formula!]; return n; })); }}>Install with Homebrew</Button>
                 ) : null}

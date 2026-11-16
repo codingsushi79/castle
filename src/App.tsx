@@ -2,7 +2,7 @@ import { Tooltip } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import {
   IconActivity, IconBolt, IconBook2, IconBooks, IconChartLine, IconCpu, IconDeviceTv, IconFlag, IconPuzzle, IconSettings,
-  IconTarget, IconTrophy, IconUserCircle, IconWorld, IconDatabase, IconCommand,
+  IconTarget, IconTrophy, IconUserCircle, IconWorld, IconDatabase, IconCommand, IconBroadcast,
 } from "@tabler/icons-react";
 import { ReactNode, useEffect, useState } from "react";
 import { CheatSheet, CommandPalette, openPalette } from "./components/Palette";
@@ -26,6 +26,7 @@ import LibraryPage from "./pages/Library";
 import LichessPage from "./pages/Lichess";
 import MatchesPage from "./pages/Matches";
 import PlayPage from "./pages/Play";
+import OnlinePage from "./pages/Online";
 import ProgressPage from "./pages/Progress";
 import PuzzlesPage from "./pages/Puzzles";
 import RepertoirePage from "./pages/Repertoire";
@@ -35,6 +36,7 @@ import WatchPage from "./pages/Watch";
 
 const PAGES: { id: Page; title: string; icon: ReactNode; group: number }[] = [
   { id: "play", title: "Play", icon: <IconFlag size={21} />, group: 0 },
+  { id: "online", title: "Castle Online", icon: <IconBroadcast size={21} />, group: 0 },
   { id: "lichess", title: "Lichess", icon: <IconBolt size={21} />, group: 0 },
   { id: "fics", title: "FICS", icon: <IconWorld size={21} />, group: 0 },
   { id: "watch", title: "Watch", icon: <IconDeviceTv size={21} />, group: 0 },
@@ -50,7 +52,7 @@ const PAGES: { id: Page; title: string; icon: ReactNode; group: number }[] = [
 ];
 
 const VIEWS: Record<Page, () => JSX.Element> = {
-  play: PlayPage, lichess: LichessPage, fics: FicsPage, watch: WatchPage, matches: MatchesPage, analysis: AnalysisPage,
+  play: PlayPage, online: OnlinePage, lichess: LichessPage, fics: FicsPage, watch: WatchPage, matches: MatchesPage, analysis: AnalysisPage,
   puzzles: PuzzlesPage, training: TrainingPage, repertoire: RepertoirePage, progress: ProgressPage, library: LibraryPage,
   accounts: AccountsPage, engines: EnginesPage, settings: SettingsPage,
 };

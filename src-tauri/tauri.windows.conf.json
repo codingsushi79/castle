@@ -1,0 +1,7 @@
+{
+  "bundle": {
+    "resources": {
+      "resources/wasabi/wasabi-2.1-windows-x64.exe": "wasabi-2.1.exe"
+    }
+  }
+}
