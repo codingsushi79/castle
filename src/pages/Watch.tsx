@@ -10,7 +10,7 @@ import { useApp, useTree } from "../lib/store";
 import { Engine } from "../lib/uci";
 
 /** Evaluates whatever position is being watched with the default engine. */
-function useSpectatorEngine(fen: string | undefined, enabled: boolean) {
+export function useSpectatorEngine(fen: string | undefined, enabled: boolean) {
   const [score, setScore] = useState<Score>();
   const [line, setLine] = useState("");
   const engine = useRef<Engine>();

@@ -195,3 +195,41 @@ export function forecast(days = 14): { day: string; count: number }[] {
   }
   return counts.map((count, i) => ({ day: i === 0 ? "Now" : `+${i}`, count }));
 }
+
+/** Where a game left the repertoire, if it did. */
+export interface PrepCheck {
+  /** "you": you played something else; "them": the opponent played a move your repertoire doesn't cover; "end": the game went past your prep. */
+  kind: "you" | "them" | "end";
+  /** Move number and side, e.g. "7." or "7...". */
+  moveLabel: string;
+  played: string;
+  /** The move(s) your repertoire has here. */
+  expected: string[];
+  /** Plies played inside the repertoire. */
+  depth: number;
+  /** The game up to and including the move that left the repertoire, for adding it. */
+  line: GameTree;
+}
+
+/** Walks a game alongside the repertoire for the colour played and finds where they part. */
+export function checkPrep(game: GameTree, color: Color): PrepCheck | undefined {
+  if (game.rules !== "chess" || !game.isStandardStart) return undefined;
+  const rep = useRepertoire.getState().trees[color];
+  if (!rep.root.children.length) return undefined;
+  let at: GNode = rep.root;
+  const line = new GameTree();
+  const nodes = game.mainline;
+  for (let i = 0; i < nodes.length; i++) {
+    const node = nodes[i];
+    const mover: Color = i % 2 === 0 ? "white" : "black";
+    const label = `${Math.floor(i / 2) + 1}.${mover === "black" ? ".." : ""}`;
+    if (node.uci) line.play(node.uci);
+    if (!at.children.length) return i >= 2 ? { kind: "end", moveLabel: label, played: node.san, expected: [], depth: i, line } : undefined;
+    const next = at.children.find((c) => c.san === node.san);
+    if (!next) {
+      return { kind: mover === color ? "you" : "them", moveLabel: label, played: node.san, expected: at.children.map((c) => c.san), depth: i, line };
+    }
+    at = next;
+  }
+  return undefined;
+}

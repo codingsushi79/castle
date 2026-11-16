@@ -157,7 +157,9 @@ export default function App() {
   useEffect(() => { db.count().then(setGames); }, [libraryRevision]);
 
   const due = dueNodes(rep.trees.white, "white", rep.cards).length + dueNodes(rep.trees.black, "black", rep.cards).length;
+  const onlineWaiting = useOnline((s) => s.correspondence.filter((c) => c.myTurn).length + s.incoming.length);
   const badge: Partial<Record<Page, number>> = {
+    play: onlineWaiting,
     analysis: tabs.length > 1 ? tabs.length : 0,
     puzzles: mistakes,
     repertoire: due,

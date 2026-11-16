@@ -16,7 +16,11 @@ permissions:
   contents: write
 
 jobs:
+  test:
+    uses: ./.github/workflows/test.yml
+
   create-release:
+    needs: test
     runs-on: ubuntu-latest
     outputs:
       release_id: ${{ steps.release.outputs.result }}

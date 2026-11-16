@@ -6,14 +6,7 @@ import { Sound } from "./sound";
 import { load, save } from "./storage";
 import { logActivity } from "./activity";
 import { usePacks } from "./packs";
-import { api, onlineToken, useOnline } from "./online";
 
-/** Posts a finished rush to the online leaderboard, when this computer plays online. */
-function submitRush(minutes: number, score: number) {
-  const token = onlineToken();
-  if (!token || score <= 0) return;
-  api("rush", { token, name: useOnline.getState().name, minutes, score }).catch(() => {});
-}
 
 export interface Puzzle {
   id: string;
@@ -156,7 +149,6 @@ export const usePuzzles = create<State>((set, get) => {
     if (record) {
       persist();
       Sound.end();
-      submitRush(s.rushMinutes, s.rushScore);
     }
   };
 

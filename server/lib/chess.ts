@@ -1,5 +1,6 @@
 import { normalizeMove } from "chessops/chess";
 import { makeFen, parseFen } from "chessops/fen";
+import { makeSan } from "chessops/san";
 import type { Rules } from "chessops/types";
 import { parseUci } from "chessops/util";
 import { defaultPosition, setupPosition } from "chessops/variant";
@@ -95,4 +96,42 @@ export function canMate(moves: string[], color: "white" | "black", variant: Vari
     if (m && pos.isLegal(m)) pos.play(m);
   }
   return !pos.hasInsufficientMaterial(color);
+}
+
+/**
+ * Checks one move of a puzzle. `moves` is the puzzle line (the setup move,
+ * then alternately the solver's and the opponent's), `step` the index of the
+ * move being tried. Any mate counts, even when the puzzle had another in mind.
+ */
+export function puzzleMove(fen: string, moves: string[], step: number, uci: string): "correct" | "solved" | "wrong" {
+  const pos = setupPosition("chess", parseFen(fen).unwrap()).unwrap();
+  for (let i = 0; i < step; i++) {
+    const m = parseUci(moves[i]);
+    if (!m) return "wrong";
+    pos.play(normalizeMove(pos, m));
+  }
+  const tried = parseUci(uci), expected = parseUci(moves[step]);
+  if (!tried || !expected) return "wrong";
+  const t = normalizeMove(pos, tried), e = normalizeMove(pos, expected);
+  if (!pos.isLegal(t)) return "wrong";
+  const same = JSON.stringify(t) === JSON.stringify(e);
+  pos.play(t);
+  if (pos.isCheckmate()) return "solved";
+  if (!same) return "wrong";
+  return step + 1 >= moves.length - 1 ? "solved" : "correct";
+}
+
+/** Every position of a game with the move that led to it, for the share page and PGN. */
+export function positions(moves: string[], variant: Variant = "chess", initialFen?: string | null): { fen: string; san: string; uci: string }[] {
+  const pos = startPosition(variant, initialFen);
+  const out = [{ fen: makeFen(pos.toSetup()), san: "", uci: "" }];
+  for (const uci of moves) {
+    const raw = parseUci(uci);
+    const m = raw && normalizeMove(pos, raw);
+    if (!m || !pos.isLegal(m)) break;
+    const san = makeSan(pos, m);
+    pos.play(m);
+    out.push({ fen: makeFen(pos.toSetup()), san, uci });
+  }
+  return out;
 }

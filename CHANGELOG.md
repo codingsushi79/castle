@@ -1,5 +1,36 @@
 # Castle changelog
 
+## 2.3.1-1
+
+The first beta of Castle 2.3.1: more ways to play online, and a safer, faster Castle Online.
+
+### Play online
+- **Instant updates:** moves, chat and challenges now arrive over a live connection the moment they happen, instead of on the next check a second or two later.
+- **Ratings per category:** separate ratings for bullet, blitz, rapid, classical, correspondence and each variant, with a leaderboard for each. Your current rating starts each speed off.
+- **Correspondence:** games with 1 to 14 days per move. Castle tells you when it's your move, the Play icon shows how many games are waiting, and the games follow you to any computer your rating is on.
+- **Swiss tournaments:** a set number of rounds; everyone plays every round against someone on the same score, with a bye when the numbers are odd. A Daily Swiss runs every evening, or make your own.
+- **Arena extras:** **Berserk** halves your clock for a bonus point when you win, each arena has its own chat, and the top three get a podium.
+- **Castle TV:** the live game between the highest-rated players, moving on to the next when it ends. Spectators get an engine evaluation that runs three moves behind, so players can't use it.
+- **Share games:** copy a link anyone can open in a browser, copy or save the PGN, or save the game as an animated GIF.
+
+### Your rating
+- **Move it to another computer** with a short code, or link it to your Lichess account and get it back any time by signing in to Lichess (Play → Online → Ratings & transfer).
+
+### Safety
+- **Block** any player: they can't challenge you, join your games or be paired with you, and their chat is hidden.
+- **Report** rude chat, cheating, offensive names or stalling. A player reported by several people can't chat for a day.
+- Offensive names and words are filtered, and you can turn off chat with opponents or hide the spectators' room.
+
+### Training
+- **Opening prep after each game:** Castle checks the game against your repertoire and tells you where you, or your opponent, left it, with a one-click way to practise the line or add the new position.
+- **Variant reviews:** with Fairy-Stockfish installed, variant games are reviewed too.
+
+### Puzzles
+- **Checked scores:** ranked rush and puzzle battles are now checked move by move by the server, which picks the puzzles and keeps the solutions, so every score on the leaderboard is real. Offline practice rush is still there.
+
+### Behind the scenes
+- The server's end-to-end tests now live in the repository and run on every change; a failing test stops a release.
+
 ## 2.3.0
 
 Castle 2.3: a much bigger Castle Online.

@@ -15,6 +15,8 @@ export interface Profile {
   draws: number;
   peak: number;
   v: number;
+  /** Ratings per category (bullet, blitz, rapid, classical, correspondence, each variant): r, games, peak. */
+  ratings?: Record<string, { r: number; g: number; p: number }>;
 }
 
 function key(): Buffer {

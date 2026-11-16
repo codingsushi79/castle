@@ -1,0 +1,39 @@
+name: Tests
+
+# Typechecks the app and the Castle Online server, then runs the server's
+# end-to-end tests and the app's online code against it (both on an
+# in-process Postgres, so no database or network is needed).
+# Releases call this first (build.yml), so a failing test stops a release.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_call:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            server/package-lock.json
+      - run: npm ci
+      - name: Typecheck the app
+        run: npx tsc --noEmit
+      - name: Install the server
+        run: npm ci
+        working-directory: server
+      - name: Typecheck the server
+        run: npm run typecheck
+        working-directory: server
+      - name: Server tests
+        run: npm test
+        working-directory: server
+      - name: App online tests
+        run: npm run test:client
+        working-directory: server

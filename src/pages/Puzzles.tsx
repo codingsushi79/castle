@@ -8,7 +8,7 @@ import { canMovePuzzle, dailyStreak, dayNumber, PuzzleMode, THEME_NAMES, usePuzz
 import { clockText } from "../lib/storage";
 import { useApp } from "../lib/store";
 import { usePacks } from "../lib/packs";
-import { useBattle } from "../lib/battle";
+import { useRace } from "../lib/race";
 import { api, useOnline } from "../lib/online";
 import { IconPackage, IconTrash } from "@tabler/icons-react";
 import { ActionIcon } from "@mantine/core";
@@ -22,7 +22,9 @@ export default function PuzzlesPage() {
   const finished = p.status === "solved" || p.status === "revealed";
   const themes = ["all", ...Object.keys(THEME_NAMES).filter((t) => t !== "all" && t !== "mistake").sort((a, b) => THEME_NAMES[a].localeCompare(THEME_NAMES[b]))];
   const dailyDone = p.stats.dailySolved.includes(dayNumber());
-  if (p.mode === "battle") return <BattlePage />;
+  const raceKind = useRace((s) => s.kind);
+  const raceError = useRace((s) => s.error);
+  if (p.mode === "battle" || (p.mode === "rush" && raceKind === "rush")) return <RacePage />;
 
   const status = {
     loading: ["Loading puzzles", "One moment…", "dimmed"],
@@ -128,10 +130,19 @@ export default function PuzzlesPage() {
           {p.mode === "rated" && <Select label="Theme" searchable value={p.theme} onChange={(v) => v && p.setTheme(v)} data={themes.map((t) => ({ value: t, label: THEME_NAMES[t] }))} />}
           {p.mode === "rush" ? (
             !p.rushActive && (
-              <Group grow>
-                <Button size="sm" leftSection={<IconBolt size={15} />} disabled={!p.loaded} onClick={() => p.startRush(3)}>3 minutes</Button>
-                <Button size="sm" variant="light" leftSection={<IconBolt size={15} />} disabled={!p.loaded} onClick={() => p.startRush(5)}>5 minutes</Button>
-              </Group>
+              <>
+                <Text size="xs" fw={600}>Ranked: checked by Castle Online, on the leaderboard</Text>
+                <Group grow>
+                  <Button size="sm" leftSection={<IconTrophy size={15} />} onClick={() => useRace.getState().startRush(3).catch((e) => useRace.setState({ error: e.message }))}>3 minutes</Button>
+                  <Button size="sm" variant="light" leftSection={<IconTrophy size={15} />} onClick={() => useRace.getState().startRush(5).catch((e) => useRace.setState({ error: e.message }))}>5 minutes</Button>
+                </Group>
+                <Text size="xs" fw={600} mt={4}>Practice: offline, just for you</Text>
+                <Group grow>
+                  <Button size="sm" variant="default" leftSection={<IconBolt size={15} />} disabled={!p.loaded} onClick={() => p.startRush(3)}>3 minutes</Button>
+                  <Button size="sm" variant="default" leftSection={<IconBolt size={15} />} disabled={!p.loaded} onClick={() => p.startRush(5)}>5 minutes</Button>
+                </Group>
+                {raceError && <Text size="xs" c="red">{raceError}</Text>}
+              </>
             )
           ) : p.status !== "empty" && (
             <>
@@ -191,7 +202,7 @@ function PackCard() {
   );
 }
 
-/** The best rush scores from everyone who plays Castle Online. */
+/** The best checked rush runs from everyone who plays Castle Online. */
 function RushBoard({ minutes }: { minutes: number }) {
   const [length, setLength] = useState(minutes === 5 ? 5 : 3);
   const [scores, setScores] = useState<{ guest: string; name: string; score: number }[]>();
@@ -210,15 +221,15 @@ function RushBoard({ minutes }: { minutes: number }) {
           <Text size="sm" style={{ flex: 1 }} truncate>{x.name}{x.guest === me ? " (you)" : ""}</Text>
           <Text size="sm" fw={700}>{x.score}</Text>
         </div>
-      )) : <Text size="xs" c="dimmed" p={12}>No scores yet. Runs are posted here when you play Castle Online on this computer.</Text>}
+      )) : <Text size="xs" c="dimmed" p={12}>No ranked runs yet. Every move of a ranked run is checked by the server, so these scores are real.</Text>}
     </Panel>
   );
 }
 
-/** Puzzle battles: race another player through the same puzzles. */
-function BattlePage() {
+/** Ranked rush and puzzle battles: every move goes to the server, which keeps the solutions and the score. */
+function RacePage() {
   const p = usePuzzles();
-  const b = useBattle();
+  const r = useRace();
   const online = useOnline();
   const [code, setCode] = useState("");
   const [minutes, setMinutes] = useState("3");
@@ -229,54 +240,56 @@ function BattlePage() {
   useEffect(() => {
     if (!online.ready) { online.start(); return; }
     online.refreshLobby();
-    const t = setInterval(() => !useBattle.getState().view && useOnline.getState().refreshLobby(), 4000);
+    const t = setInterval(() => !useRace.getState().race && useOnline.getState().refreshLobby(), 4000);
     return () => clearInterval(t);
   }, [online.ready]); // eslint-disable-line react-hooks/exhaustive-deps
   const run = async (what: string, f: () => Promise<void>) => {
     setBusy(what);
-    try { await f(); } catch (e: any) { useBattle.setState({ error: e.message }); } finally { setBusy(undefined); }
+    try { await f(); } catch (e: any) { useRace.setState({ error: e.message }); } finally { setBusy(undefined); }
   };
 
-  const v = b.view;
-  const now = Date.now() + b.offset;
-  const me = v && b.side ? v[b.side] : undefined;
-  const them = v && b.side ? v[b.side === "a" ? "b" : "a"] : undefined;
-  // My own running score is ahead of what the server last echoed.
-  const myScore = Math.max(b.score, me?.score ?? 0), myStrikes = Math.max(b.strikes, me?.strikes ?? 0);
-  const left = v?.endsAt ? Math.max(0, (v.endsAt - now) / 1000) : (v?.minutes ?? 3) * 60;
+  const now = Date.now() + r.offset;
+  const race = r.race, runView = r.run;
+  const me = race && r.side ? race[r.side] : undefined;
+  const them = race && r.side ? race[r.side === "a" ? "b" : "a"] : undefined;
+  const ends = race?.endsAt ?? runView?.endsAt ?? null;
+  const left = ends ? Math.max(0, (ends - now) / 1000) : Number(minutes) * 60;
+  const myScore = Math.max(runView?.score ?? 0, me?.score ?? 0), myStrikes = Math.max(runView?.strikes ?? 0, me?.strikes ?? 0);
+  const over = race ? race.status === "finished" : runView?.status === "finished" || (!!ends && left <= 0) || myStrikes >= 3;
   const strikes = (n: number) => <Group gap={2}>{[0, 1, 2].map((i) => <IconX key={i} size={13} color={i < n ? "#ff6b6b" : "#555"} stroke={3} />)}</Group>;
-  const verdict = v?.status === "finished" && them ? (myScore > them.score ? "You win!" : myScore < them.score ? `${them.name} wins` : "A tie") : undefined;
+  const verdict = race && over && them ? (myScore > them.score ? "You win!" : myScore < them.score ? `${them.name} wins` : "A tie") : undefined;
+  const active = r.kind === "rush" || !!race;
 
   return (
     <div className="page">
       <div className="boardcol">
         <div className="toolbar" style={{ margin: "-14px -16px 6px" }}>
-          <SegmentedControl value={p.mode} onChange={(m) => { b.leave(); p.setMode(m as PuzzleMode); }}
+          <SegmentedControl value={p.mode} onChange={(m) => { r.leave(); p.setMode(m as PuzzleMode); }}
             data={[{ value: "rated", label: "Rated" }, { value: "rush", label: "Rush" }, { value: "mistakes", label: "My mistakes" }, { value: "daily", label: "Daily" }, { value: "pack", label: "Packs" }, { value: "battle", label: "Battle" }]} />
         </div>
-        <div className={"boardrow" + (b.flash === "wrong" ? " shake" : "")}>
-          <Board key={v ? `${v.id}-${b.index}` : "idle"} fen={b.fen} orientation={b.userColor} lastMove={b.lastMove}
-            movable={b.ready ? b.userColor : undefined} onMove={(m) => b.attempt(m)} />
+        <div className={"boardrow" + (r.flash === "wrong" ? " shake" : "")}>
+          <Board key={runView ? `${runView.id}-${runView.index}` : "idle"} fen={r.fen} orientation={r.userColor} lastMove={r.answer ?? r.lastMove}
+            movable={r.ready ? r.userColor : undefined} onMove={(m) => r.attempt(m)} />
         </div>
       </div>
       <div className="sidecol stagger">
-        {b.error && <div style={{ padding: "10px 12px 0" }}><Alert color="orange" p="xs" withCloseButton onClose={() => useBattle.setState({ error: undefined })}>{b.error}</Alert></div>}
-        {v && me ? (
+        {r.error && <div style={{ padding: "10px 12px 0" }}><Alert color="orange" p="xs" withCloseButton onClose={() => useRace.setState({ error: undefined })}>{r.error}</Alert></div>}
+        {active ? (
           <>
-            <Panel title={<><IconSwords size={13} /> Puzzle battle · {v.minutes} min</>}>
-              {v.status === "waiting" ? (
+            <Panel title={<>{r.kind === "rush" ? <IconTrophy size={13} /> : <IconSwords size={13} />} {r.kind === "rush" ? "Ranked rush" : "Puzzle battle"} · {r.kind === "rush" ? (runView?.endsAt && runView.startedAt ? Math.round((runView.endsAt - runView.startedAt) / 60000) : minutes) : race?.minutes} min</>}>
+              {race?.status === "waiting" ? (
                 <>
                   <Group gap={8}><Loader size="xs" /><Text fw={700}>Waiting for an opponent</Text></Group>
-                  <Text size="sm" c="dimmed" mt={4}>Share the code <b>{v.code}</b>{isPublic ? ", or wait for someone from the lobby" : ""}. The race starts five seconds after they join.</Text>
+                  <Text size="sm" c="dimmed" mt={4}>Share the code <b>{race.code}</b>{isPublic ? ", or wait for someone from the lobby" : ""}. The race starts five seconds after they join.</Text>
                 </>
-              ) : v.status === "countdown" ? (
-                <Text fw={800} fz={28} ta="center">Starting in {Math.max(1, Math.ceil(((v.startedAt ?? now) - now) / 1000))}…</Text>
+              ) : race?.status === "countdown" ? (
+                <Text fw={800} fz={28} ta="center">Starting in {Math.max(1, Math.ceil(((race.startedAt ?? now) - now) / 1000))}…</Text>
               ) : (
-                <Text fw={800} fz={28} ta="center" ff="ui-rounded, system-ui" c={left < 15 && v.status === "running" ? "red" : undefined}>{verdict ?? clockText(left)}</Text>
+                <Text fw={800} fz={28} ta="center" ff="ui-rounded, system-ui" c={left < 15 && !over ? "red" : undefined}>{verdict ?? (over ? "Time!" : clockText(left))}</Text>
               )}
-              {v.status !== "waiting" && them && (
+              {race && race.status !== "waiting" && them ? (
                 <Group grow mt="sm">
-                  {[{ s: me, score: myScore, st: myStrikes, label: "You" }, { s: them, score: them.score, st: them.strikes, label: them.name ?? "Opponent" }].map((x) => (
+                  {[{ score: myScore, st: myStrikes, label: "You" }, { score: them.score, st: them.strikes, label: them.name ?? "Opponent" }].map((x) => (
                     <div key={x.label} style={{ textAlign: "center" }}>
                       <Text size="xs" c="dimmed" truncate>{x.label}</Text>
                       <Text fw={800} fz={36} ff="ui-rounded, system-ui" lh={1.1}>{x.score}</Text>
@@ -284,37 +297,44 @@ function BattlePage() {
                     </div>
                   ))}
                 </Group>
+              ) : r.kind === "rush" && (
+                <div style={{ textAlign: "center", marginTop: 8 }}>
+                  <Text fw={800} fz={36} ff="ui-rounded, system-ui" lh={1.1}>{myScore}</Text>
+                  <Group justify="center">{strikes(myStrikes)}</Group>
+                </div>
               )}
-              {v.status === "running" && myStrikes >= 3 && <Text size="sm" c="dimmed" mt={6} ta="center">Three misses: you're out. Wait for the clock.</Text>}
-              {v.status === "running" && b.flash && <Text size="sm" mt={6} ta="center" c={b.flash === "right" ? "green" : "red"}>{b.flash === "right" ? "Solved" : "Missed"}</Text>}
-              {v.status === "running" && !b.flash && myStrikes < 3 && <Text size="sm" mt={6} ta="center" c="dimmed">{b.userColor === "white" ? "White" : "Black"} to move · puzzle {b.index + 1}</Text>}
+              {!over && myStrikes >= 3 && <Text size="sm" c="dimmed" mt={6} ta="center">Three misses: you're out.</Text>}
+              {!over && r.flash && <Text size="sm" mt={6} ta="center" c={r.flash === "right" ? "green" : "red"}>{r.flash === "right" ? "Solved" : "Missed: the right move is shown"}</Text>}
+              {!over && !r.flash && runView?.status === "running" && myStrikes < 3 && <Text size="sm" mt={6} ta="center" c="dimmed">{r.userColor === "white" ? "White" : "Black"} to move · puzzle {runView.index + 1}{runView.puzzle ? ` · rated ${runView.puzzle.rating}` : ""}</Text>}
+              {over && r.kind === "rush" && <Text size="sm" mt={6} ta="center">Final score {myScore}. It's on the leaderboard if it's your best.</Text>}
             </Panel>
+            {r.kind === "rush" && over && <RushBoard minutes={Number(minutes)} />}
             <div style={{ padding: 12 }}>
-              <Button fullWidth variant="default" onClick={() => b.leave()}>{v.status === "finished" ? "New battle" : v.status === "waiting" ? "Cancel" : "Leave"}</Button>
+              <Button fullWidth variant="default" onClick={() => r.leave()}>{over ? (r.kind === "rush" ? "Done" : "New battle") : race?.status === "waiting" ? "Cancel" : "Leave"}</Button>
             </div>
           </>
         ) : (
           <>
             <Panel title={<><IconSwords size={13} /> Puzzle battle</>}>
-              <Text size="sm" c="dimmed">Race another player through the same puzzles. Each solve scores a point; three misses and you're out. Puzzles get harder as you go.</Text>
+              <Text size="sm" c="dimmed">Race another player through the same puzzles. Each solve scores a point; three misses and you're out. Puzzles get harder as you go, and the server checks every move.</Text>
               <Group mt="sm" gap="md" align="flex-end">
                 <SegmentedControl size="xs" value={minutes} onChange={setMinutes} data={[{ value: "2", label: "2 min" }, { value: "3", label: "3 min" }, { value: "5", label: "5 min" }]} />
                 <Switch size="xs" label="Listed in the lobby" checked={isPublic} onChange={(e) => setPublic(e.currentTarget.checked)} />
               </Group>
               <Button mt="sm" fullWidth loading={busy === "create"} disabled={!online.ready} leftSection={<IconSwords size={15} />}
-                onClick={() => run("create", () => b.create(Number(minutes), isPublic))}>Start a battle</Button>
+                onClick={() => run("create", () => r.createBattle(Number(minutes), isPublic))}>Start a battle</Button>
               <Group mt="sm" gap={6} wrap="nowrap">
                 <TextInput style={{ flex: 1 }} size="xs" placeholder="Join with a code" value={code} onChange={(e) => setCode(e.currentTarget.value.toUpperCase())}
-                  onKeyDown={(e) => e.key === "Enter" && code && run("join", () => b.join(code))} />
-                <Button size="xs" variant="default" disabled={!code || !online.ready} loading={busy === "join"} onClick={() => run("join", () => b.join(code))}>Join</Button>
+                  onKeyDown={(e) => e.key === "Enter" && code && run("join", () => r.joinBattle(code))} />
+                <Button size="xs" variant="default" disabled={!code || !online.ready} loading={busy === "join"} onClick={() => run("join", () => r.joinBattle(code))}>Join</Button>
               </Group>
               {!online.ready && <Text size="xs" c={online.error ? "orange" : "dimmed"} mt={6}>{online.error ?? "Connecting to Castle Online…"}</Text>}
             </Panel>
             <Panel title="Open battles" pad={false}>
-              {online.battles.length ? online.battles.map((x) => (
+              {online.races.length ? online.races.map((x) => (
                 <div key={x.id} className="listrow">
                   <Text size="sm" style={{ flex: 1 }} truncate><b>{x.name}</b> · {x.minutes} min</Text>
-                  <Button size="xs" variant="light" loading={busy === x.code} onClick={() => run(x.code, () => b.join(x.code))}>Battle</Button>
+                  <Button size="xs" variant="light" loading={busy === x.code} onClick={() => run(x.code, () => r.joinBattle(x.code))}>Battle</Button>
                 </div>
               )) : <Text size="sm" c="dimmed" p={12}>Nobody is waiting. Start a battle and it shows up here.</Text>}
             </Panel>
