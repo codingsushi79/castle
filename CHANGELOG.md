@@ -20,6 +20,7 @@ The first beta of Castle 2.3: a much bigger Castle Online.
 - **Rush leaderboard:** your best rush runs go on an online leaderboard.
 
 ### Everything else
+- Board letters now sit in the corner of their squares, just like the numbers.
 - **What's new:** this window appears after each update, and you can open it again from Settings → Updates.
 
 ## 2.2.1

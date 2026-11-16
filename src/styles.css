@@ -96,9 +96,10 @@ cg-board square.hl-blue { background-color: rgba(60, 120, 230, .5); }
 .board-square { container-type: inline-size; }
 .board-square .cg-wrap coords { font-weight: 700; font-size: clamp(10px, 3cqw, 17px); opacity: 1; z-index: 3; font-family: ui-rounded, system-ui, sans-serif; line-height: 1; }
 .board-square .cg-wrap coords.ranks { left: 0; top: 0; width: 12.5%; height: 100%; }
-.board-square .cg-wrap coords.ranks coord { transform: none; padding: 1.5% 0 0 3%; flex: 1 1 0; }
+/* Both sets sit tight in their square's corner, inset by the same amount (cqw: 1% of the board). */
+.board-square .cg-wrap coords.ranks coord { transform: none; padding: 0.3cqw 0 0 0.45cqw; flex: 1 1 0; }
 .board-square .cg-wrap coords.files { left: 0; bottom: 0; width: 100%; height: 12.5%; align-items: flex-end; text-transform: none; }
-.board-square .cg-wrap coords.files coord { text-align: right; padding: 0 3% 1.5% 0; flex: 1 1 0; }
+.board-square .cg-wrap coords.files coord { text-align: right; padding: 0 0.45cqw 0.3cqw 0; flex: 1 1 0; }
 .promotion { position: absolute; inset: 0; background: #0007; display: grid; place-items: center; z-index: 20; border-radius: 4px; animation: pop .15s ease-out; }
 .promotion > div { display: flex; gap: 6px; padding: 10px; background: var(--bg-raised); border-radius: 12px; box-shadow: 0 10px 30px #000a; }
 .promotion button { border: 0; background: #ffffff10; border-radius: 8px; padding: 4px; cursor: pointer; transition: transform .1s, background .1s; }
