@@ -142,8 +142,13 @@ jobs:
             const { data: assets } = await github.rest.repos.listReleaseAssets({ owner, repo, release_id, per_page: 100 });
             const manifest = assets.find((a) => a.name === 'latest.json');
             if (!manifest) return core.warning('This release has no latest.json; the beta channel was not moved.');
-            const fresh = await download(manifest.id);
-            const version = JSON.parse(fresh.toString()).version;
+            // tauri-action links each file through releases/latest/download, and "latest" is the newest
+            // stable release. For a beta that fetches the stable build, which then fails its signature
+            // check (the macOS archives have no version in their names). Pin the links to this release.
+            const parsed = JSON.parse((await download(manifest.id)).toString());
+            const version = parsed.version;
+            for (const p of Object.values(parsed.platforms)) p.url = p.url.replace('/releases/latest/download/', `/releases/download/v${version}/`);
+            const fresh = Buffer.from(JSON.stringify(parsed, null, 2));
 
             let channel;
             try {
