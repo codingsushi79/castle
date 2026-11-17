@@ -2,6 +2,7 @@ import { variantOf } from "./chess.js";
 import { cleanName, cleanText, daysOf, fail, Handler, json, ping, sql, timeOf } from "./db.js";
 import { blocked, createGame, GameOptions, load, remember, takeSeat, toMove, verified } from "./game.js";
 import { MUTE_AFTER_REPORTS } from "./moderation.js";
+import { alert } from "./push.js";
 import { randomId, seal } from "./token.js";
 
 export const REACTIONS = ["👏", "🔥", "😮", "😂", "♟️", "💀"];
@@ -29,6 +30,11 @@ async function reissue(guest: string) {
 async function roomExists(id: string) {
   if (id.startsWith("arena:")) return (await sql`select 1 from arenas where id = ${id.slice(6)}`).length > 0;
   if (id.startsWith("swiss:")) return (await sql`select 1 from swiss where id = ${id.slice(6)}`).length > 0;
+  if (id.startsWith("team:")) {
+    const [, team, code] = id.split(":");
+    return (await sql`select 1 from teams where id = ${team ?? ""} and code = ${code ?? ""}`).length > 0;
+  }
+  if (id.startsWith("study:")) return (await sql`select 1 from studies where id = ${id.slice(6)}`).length > 0;
   return !!(await load(id));
 }
 
@@ -47,6 +53,7 @@ export const socialRoutes: Record<string, Handler> = {
     await sql`insert into challenges (id, from_guest, from_name, from_rating, to_guest, game_id, code, minutes, increment, rated, variant)
       values (${id}, ${p.id}, ${name}, ${p.rating}, ${to}, ${seat.id}, ${seat.code}, ${o.minutes}, ${o.increment}, ${o.rated}, ${o.variant})`;
     await ping({ t: "inbox", guest: to });
+    await alert(to, "Challenge", `${name} challenges you to ${o.days ? `a correspondence game (${o.days} days per move)` : `${o.minutes}+${o.increment}`}${o.variant !== "chess" ? `, ${o.variant}` : ""}.`, "/play/");
     return json({ ...seat, challenge: id });
   },
 

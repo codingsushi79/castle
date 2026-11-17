@@ -57,6 +57,11 @@ async function listen() {
 }
 
 function onEvent(e: { t?: string; id?: string; guest?: string; room?: string }) {
+  if (e.t === "study" && e.id) {
+    // A study changed: everyone looking at it reloads it.
+    for (const [ws, s] of subs) if (s.rooms.has(`study:${e.id}`)) send(ws, { t: "study", id: e.id });
+    return;
+  }
   if (e.t === "game" && e.id) dirty.games.add(e.id);
   else if (e.t === "inbox" && e.guest) dirty.guests.add(e.guest);
   else if (e.t === "room") dirty.rooms = true;

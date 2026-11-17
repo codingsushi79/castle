@@ -5,7 +5,7 @@ import { load, save } from "./storage";
 
 export type Page =
   | "play" | "online" | "lichess" | "fics" | "watch" | "matches" | "analysis" | "puzzles" | "training"
-  | "repertoire" | "progress" | "library" | "accounts" | "engines" | "settings";
+  | "repertoire" | "progress" | "library" | "accounts" | "engines" | "settings" | "studies";
 
 export interface Settings {
   boardTheme: string;

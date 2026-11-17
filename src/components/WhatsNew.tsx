@@ -28,24 +28,81 @@ const newer = (a: string, b: string) => {
 const useWhatsNew = create<{ open: boolean; since?: string }>(() => ({ open: false }));
 export const openWhatsNew = () => useWhatsNew.setState({ open: true, since: undefined });
 
-/** **bold** inside a line. */
-function inline(text: string): ReactNode {
-  return text.split(/(\*\*[^*]+\*\*)/).map((part, i) => (part.startsWith("**") ? <b key={i}>{part.slice(2, -2)}</b> : <Fragment key={i}>{part}</Fragment>));
+/** Inline Markdown: **bold**, *italic* or _italic_, `code`, and [links](https://…). */
+export function inline(text: string): ReactNode {
+  const out: ReactNode[] = [];
+  const re = /(\*\*[^*]+\*\*|__[^_]+__|`[^`]+`|\[[^\]]+\]\([^)\s]+\)|\*[^*\s][^*]*\*|_[^_\s][^_]*_)/g;
+  let last = 0, m: RegExpExecArray | null, k = 0;
+  while ((m = re.exec(text))) {
+    if (m.index > last) out.push(<Fragment key={k++}>{text.slice(last, m.index)}</Fragment>);
+    const t = m[0];
+    if (t.startsWith("**") || t.startsWith("__")) out.push(<b key={k++}>{inline(t.slice(2, -2))}</b>);
+    else if (t.startsWith("`")) out.push(<code key={k++} style={{ fontSize: "0.92em", padding: "0 4px", borderRadius: 4, background: "var(--bg-raised)" }}>{t.slice(1, -1)}</code>);
+    else if (t.startsWith("[")) {
+      const [, label, href] = /^\[([^\]]+)\]\(([^)]+)\)$/.exec(t)!;
+      out.push(<a key={k++} href={href} target="_blank" rel="noreferrer" style={{ color: "var(--mantine-primary-color-filled)" }}>{label}</a>);
+    } else out.push(<i key={k++}>{inline(t.slice(1, -1))}</i>);
+    last = m.index + t.length;
+  }
+  if (last < text.length) out.push(<Fragment key={k++}>{text.slice(last)}</Fragment>);
+  return out;
 }
 
-/** Release notes written in CHANGELOG.md's style (an update's notes come in this form). */
+/**
+ * A small Markdown renderer for release notes: headings (# to ####), bullet
+ * lists (-, *, +, indented ones too), numbered lists, quotes, rules and
+ * paragraphs, with inline formatting. Anything else shows as plain text.
+ */
+export function Markdown({ text }: { text: string }) {
+  const lines = text.replace(/\r/g, "").split("\n");
+  const blocks: ReactNode[] = [];
+  let para: string[] = [];
+  const flush = () => {
+    if (para.length) blocks.push(<Text key={blocks.length} size="sm" c="dimmed" mb={6}>{inline(para.join(" "))}</Text>);
+    para = [];
+  };
+  for (const raw of lines) {
+    const line = raw.trimEnd();
+    const heading = /^(#{1,6})\s+(.*)$/.exec(line.trim());
+    const bullet = /^(\s*)[-*+]\s+(.*)$/.exec(line);
+    const numbered = /^(\s*)(\d+)[.)]\s+(.*)$/.exec(line);
+    if (!line.trim()) { flush(); continue; }
+    if (heading) {
+      flush();
+      const level = heading[1].length;
+      blocks.push(<Text key={blocks.length} fw={level <= 2 ? 800 : 700} size={level <= 2 ? "md" : "sm"} mt={level <= 2 ? 12 : 10} mb={3}>{inline(heading[2])}</Text>);
+    } else if (/^\s*([-*_])(\s*\1){2,}\s*$/.test(line)) {
+      flush();
+      blocks.push(<hr key={blocks.length} style={{ border: 0, borderTop: "1px solid var(--border)", margin: "8px 0" }} />);
+    } else if (bullet || numbered) {
+      flush();
+      const indent = Math.floor(((bullet ?? numbered)![1].length) / 2);
+      const marker = bullet ? (indent ? "◦" : "•") : `${numbered![2]}.`;
+      const body = bullet ? bullet[2] : numbered![3];
+      blocks.push(
+        <Text key={blocks.length} size="sm" mb={3} style={{ display: "flex", gap: 6, paddingLeft: 4 + indent * 16 }}>
+          <span style={{ flex: "none", minWidth: bullet ? 8 : 16, opacity: 0.8 }}>{marker}</span><span>{inline(body)}</span>
+        </Text>,
+      );
+    } else if (line.trim().startsWith(">")) {
+      flush();
+      blocks.push(<Text key={blocks.length} size="sm" c="dimmed" mb={4} pl={10} style={{ borderLeft: "3px solid var(--border)" }}>{inline(line.trim().replace(/^>\s?/, ""))}</Text>);
+    } else para.push(line.trim());
+  }
+  flush();
+  return <>{blocks}</>;
+}
+
+/** An update's release notes (Markdown, as in CHANGELOG.md). */
 export function NotesText({ text }: { text: string }) {
-  return <ReleaseNotes r={{ version: "", lines: text.split("\n").map((l) => l.trimEnd()) }} bare />;
+  return <Markdown text={text} />;
 }
 
-function ReleaseNotes({ r, bare = false }: { r: Release; bare?: boolean }) {
+function ReleaseNotes({ r }: { r: Release }) {
   return (
     <div style={{ marginBottom: 18 }}>
-      {!bare && <Text fw={800} size="lg" mb={4}>Castle {versionLabel(r.version)} {r.version.includes("-") && <Badge size="xs" variant="light" color="orange" ml={4}>Beta</Badge>}</Text>}
-      {r.lines.map((l, i) =>
-        l.startsWith("### ") ? <Text key={i} fw={700} size="sm" mt={10} mb={2}>{l.slice(4)}</Text>
-        : l.startsWith("- ") ? <Text key={i} size="sm" pl={14} style={{ textIndent: -10 }} mb={3}>• {inline(l.slice(2))}</Text>
-        : l ? <Text key={i} size="sm" c="dimmed" mb={4}>{inline(l)}</Text> : null)}
+      <Text fw={800} size="lg" mb={4}>Castle {versionLabel(r.version)} {r.version.includes("-") && <Badge size="xs" variant="light" color="orange" ml={4}>Beta</Badge>}</Text>
+      <Markdown text={r.lines.join("\n")} />
     </div>
   );
 }

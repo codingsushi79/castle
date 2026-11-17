@@ -1,7 +1,7 @@
 import { canMate, replay, Result, variantOf } from "../lib/chess.js";
 import { cleanName, Color, daysOf, fail, Handler, json, other, ping, Row, sql, timeOf, CORS } from "../lib/db.js";
 import {
-  ABANDON_MS, blocked, clocks, createGame, current, finish, fresh, load, markSeen, movesOf, remember, seatOf, startMs, takeSeat,
+  ABANDON_MS, applyMove, blocked, clocks, createGame, current, finish, fresh, load, markSeen, movesOf, remember, seatOf, startMs, takeSeat,
   toMove, variantFields, verified, view,
 } from "../lib/game.js";
 import { arenaRoutes } from "../lib/arena.js";
@@ -15,6 +15,13 @@ import { swissRoutes } from "../lib/swiss.js";
 import { teamRoutes } from "../lib/teams.js";
 import { extraRoutes } from "../lib/extras.js";
 import { banOf, modRoutes } from "../lib/mod.js";
+import { botReply, botRoutes } from "../lib/bot.js";
+import { alert, pushRoutes } from "../lib/push.js";
+import { errorRoutes } from "../lib/errors.js";
+import { simulRoutes } from "../lib/simul.js";
+import { studyRoutes } from "../lib/study.js";
+import { explorerRoutes } from "../lib/explorer.js";
+import { profileRoutes } from "../lib/profile.js";
 import { open, Profile, randomId, seal } from "../lib/token.js";
 
 /**
@@ -85,24 +92,16 @@ const core: Record<string, Handler> = {
     await markSeen(g, seat);
     if (Number(b.ply) !== g.ply) return json(view(g)); // Already applied (sent twice: peer and server).
     if (toMove(g) !== seat) return fail("It is not your move.", 409);
-    const moves = movesOf(g);
-    const uci = String(b.uci ?? "");
-    const r = replay([...moves, uci], ...variantFields(g));
-    if (!r.ok) return fail("That move is not legal.", 422);
-    const now = Date.now();
-    const c = clocks(g, now);
-    const ms = { white: Number(g.white_ms), black: Number(g.black_ms) };
-    // Correspondence: each move refills the mover's days. Otherwise the increment, unless berserk.
-    if (g.days) ms[seat] = startMs({ minutes: Number(g.minutes), days: g.days });
-    else if (g.ply >= 1) ms[seat] = c[seat] + (g[`${seat}_berserk`] ? 0 : g.increment * 1000);
-    const rows = await sql`
-      update games set moves = ${[...moves, uci].join(" ")}, ply = ply + 1, white_ms = ${ms.white}, black_ms = ${ms.black},
-        last_move_at = ${now}, draw_offer = case when draw_offer = ${seat} then draw_offer else null end, takeback_offer = null, updated_at = now()
-      where id = ${g.id} and ply = ${g.ply} and status = 'playing' returning *`;
-    if (!rows.length) return json(view((await load(g.id))!));
-    g = rows[0];
-    await ping({ t: "game", id: g.id });
-    if (r.ended) g = await finish(g, r.ended.result, r.ended.reason);
+    const before = g.ply;
+    const next = await applyMove(g, seat, String(b.uci ?? ""));
+    if (!next) return fail("That move is not legal.", 422);
+    g = next;
+    if (g.ply === before + 1 && g.status === "playing") {
+      const opp = other(seat);
+      // A bot answers at once; a correspondence opponent gets an alert on their phone.
+      if (String(g[`${opp}_guest`] ?? "").startsWith("bot:")) g = await botReply(g);
+      else if (g.days) await alert(g[`${opp}_guest`], "Your move", `${g[`${seat}_name`] ?? "Your opponent"} has moved in your correspondence game.`, `/play/#game=${g.id}`);
+    }
     return json(view(g));
   },
 
@@ -321,6 +320,7 @@ async function rematchSeat(g: Row, seat: Color, b: any) {
 
 const routes: Record<string, Handler> = {
   ...core, ...socialRoutes, ...arenaRoutes, ...swissRoutes, ...raceRoutes, ...legacyRoutes, ...teamRoutes, ...extraRoutes, ...modRoutes,
+  ...botRoutes, ...pushRoutes, ...errorRoutes, ...simulRoutes, ...studyRoutes, ...explorerRoutes, ...profileRoutes,
 };
 
 /** Things a banned player can't do: start or join games, challenge, chat, enter tournaments or races. */
@@ -328,6 +328,7 @@ const BANNED_FROM = new Set([
   "POST games", "POST join", "POST challenge", "POST answer", "POST chat", "POST arena/join", "POST arena/pair", "POST arena/create",
   "POST swiss/join", "POST swiss/pair", "POST swiss/create", "POST race/rush", "POST race/storm", "POST race/battle", "POST race/join",
   "POST team/create", "POST team/join", "POST battle", "POST battle/join", "POST rush",
+  "POST simul/create", "POST simul/join", "POST bot/play", "POST study/create",
 ]);
 
 async function handle(req: Request): Promise<Response> {

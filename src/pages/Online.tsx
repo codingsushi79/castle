@@ -1,6 +1,6 @@
 import { ActionIcon, Alert, Badge, Button, Collapse, Group, Loader, Menu, Modal, NumberInput, Progress, SegmentedControl, Select, Switch, Text, Textarea, TextInput, Tooltip } from "@mantine/core";
 import {
-  IconArrowBackUp, IconBan, IconBolt, IconChartLine, IconNotes, IconShield, IconBroadcast, IconCheck, IconCopy, IconDeviceTv, IconDots, IconEye, IconFileDownload, IconFlag, IconFlame, IconGif, IconHandStop,
+  IconArrowBackUp, IconBan, IconBolt, IconChartLine, IconNotes, IconRobot, IconShield, IconBroadcast, IconCheck, IconCopy, IconDeviceTv, IconDots, IconEye, IconFileDownload, IconFlag, IconFlame, IconGif, IconHandStop,
   IconLink, IconMailbox, IconPlayerSkipForward, IconPlugConnected, IconPlus, IconPuzzle, IconRefresh, IconSearch, IconSend, IconShare2, IconSwords,
   IconTrophy, IconUserPlus, IconUsers, IconWifiOff, IconX,
 } from "@tabler/icons-react";
@@ -8,11 +8,12 @@ import { ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { Board } from "../components/Board";
 import { EvalBar, MoveList, Panel, PlayerStrip } from "../components/common";
 import { OnlineStats } from "../components/OnlineStats";
+import { BotsPanel, openProfile, PhoneAlerts, SimulList, SimulPanel, TeamModal } from "../components/OnlineExtras";
 import { Color, GameTree, GNode, positionOf, sanLine, scoreText, Shape, uciOf } from "../lib/chess";
 import { entryOf, launch, resolveEngine } from "../lib/engines";
 import {
   ABANDON_MS, ARENA_BREAK_MS, ArenaInfo, CATEGORY_LABELS, categoryOf, Challenge, Correspondence, GameView, gamesFor, ONLINE_VARIANTS, OnlineVariant,
-  ratingFor, ratingWindow, REACTIONS, RoomLine, rulesOfVariant, shownClocks, SwissInfo, tc, TV_CHANNELS, useOnline, variantLabel,
+  isBot, ratingFor, ratingWindow, REACTIONS, RoomLine, rulesOfVariant, shownClocks, SwissInfo, tc, TV_CHANNELS, useOnline, variantLabel,
 } from "../lib/online";
 import { usePlay } from "../lib/play";
 import { usePuzzles } from "../lib/puzzles";
@@ -137,6 +138,7 @@ function RatingModal({ opened, onClose }: { opened: boolean; onClose: () => void
         <Button size="xs" variant="default" loading={busy === "recover"} onClick={() => run("recover", () => o.recoverLichess(), "Your rating is back.")}>Recover from Lichess</Button>
       </Group>
       {message && <Text size="sm" mt="sm" c={message.ok ? "teal" : "red"}>{message.text}</Text>}
+      <PhoneAlerts />
     </Modal>
   );
 }
@@ -215,8 +217,10 @@ export function OnlinePanels() {
       {o.incoming.length > 0 && <div style={{ padding: "10px 12px 0", display: "grid", gap: 6 }}>{o.incoming.map((c) => <ChallengeCard key={c.id} c={c} />)}</div>}
       {o.arena && <ArenaPanel />}
       {o.swiss && <SwissPanel />}
+      {o.simul && <SimulPanel />}
 
       <Panel title="You" right={p && <Group gap={2}>
+        <Button size="compact-xs" variant="subtle" onClick={() => openProfile(p.id)}>Profile</Button>
         <Button size="compact-xs" variant="subtle" leftSection={<IconChartLine size={12} />} onClick={() => setStatsOpen(true)}>Stats</Button>
         <Button size="compact-xs" variant="subtle" onClick={() => setRatingOpen(true)}>Ratings &amp; transfer</Button>
       </Group>}>
@@ -283,6 +287,8 @@ export function OnlinePanels() {
           : `Pairs you with someone near your ${CATEGORY_LABELS[category]} rating for ${tc(minutes, increment)} ${variantLabel(variant)}. The range widens the longer you wait.`}</Text>
       </Panel>
 
+      {!corr && <BotsPanel minutes={minutes} increment={increment} variant={variant} />}
+
       <Panel title={<><IconUsers size={13} /> Play a friend</>}>
         <SegmentedControl size="xs" fullWidth value={color} onChange={setColor} data={[{ value: "white", label: "White" }, { value: "random", label: "Random" }, { value: "black", label: "Black" }]} />
         <Button mt="sm" fullWidth variant="light" loading={busy === "create"} disabled={!o.ready} leftSection={<IconSwords size={15} />}
@@ -305,15 +311,15 @@ export function OnlinePanels() {
 
       <TeamPanel />
 
-      {!o.arena && !o.swiss && (
+      {!o.arena && !o.swiss && !o.simul && (
         <Panel title={<><IconTrophy size={13} /> Tournaments</>} pad={false}
-          right={<Tooltip label={`Make ${tourTab === "arena" ? "an arena" : "a Swiss"}`}><ActionIcon size="sm" variant="subtle" color="gray" onClick={() => setMaking(!making)}><IconPlus size={14} /></ActionIcon></Tooltip>}>
+          right={tourTab === "simul" ? undefined : <Tooltip label={`Make ${tourTab === "arena" ? "an arena" : "a Swiss"}`}><ActionIcon size="sm" variant="subtle" color="gray" onClick={() => setMaking(!making)}><IconPlus size={14} /></ActionIcon></Tooltip>}>
           <div style={{ padding: "8px 12px 4px" }}>
             <SegmentedControl size="xs" fullWidth value={tourTab} onChange={(v) => { setTourTab(v); save("onlineTourTab", v); setMaking(false); }}
-              data={[{ value: "arena", label: "Arenas" }, { value: "swiss", label: "Swiss" }]} />
+              data={[{ value: "arena", label: "Arenas" }, { value: "swiss", label: "Swiss" }, { value: "simul", label: "Simuls" }]} />
           </div>
-          <Collapse in={making}>{tourTab === "arena" ? <NewArena onDone={() => setMaking(false)} /> : <NewSwiss onDone={() => setMaking(false)} />}</Collapse>
-          {tourTab === "arena" ? (
+          <Collapse in={making && tourTab !== "simul"}>{tourTab === "arena" ? <NewArena onDone={() => setMaking(false)} /> : <NewSwiss onDone={() => setMaking(false)} />}</Collapse>
+          {tourTab === "simul" ? <SimulList /> : tourTab === "arena" ? (
             <>
               {o.arenas.filter((a) => a.status !== "finished").map((a) => <ArenaRow key={a.id} a={a} />)}
               {!o.arenas.some((a) => a.status !== "finished") && <Text size="sm" c="dimmed" p={12}>{o.ready ? "Loading arenas…" : "Arenas appear once you are connected."}</Text>}
@@ -373,7 +379,7 @@ export function OnlinePanels() {
               <div key={l.guest} className="listrow">
                 <Text w={24} fw={700} c="dimmed">{i + 1}</Text>
                 {i === 0 && <IconTrophy size={15} color="gold" />}
-                <Text size="sm" style={{ flex: 1 }} truncate fw={l.guest === p?.id ? 800 : 500}>{l.name}{l.guest === p?.id ? " (you)" : ""}</Text>
+                <Text size="sm" style={{ flex: 1, cursor: "pointer" }} truncate fw={l.guest === p?.id ? 800 : 500} onClick={() => openProfile(l.guest)}>{l.name}{l.guest === p?.id ? " (you)" : ""}</Text>
                 <Text size="xs" c="dimmed">{l.games} games</Text>
                 <Text fw={700} w={44} ta="right">{l.rating}</Text>
                 {l.guest !== p?.id && !o.friends.some((f) => f.id === l.guest) && (
@@ -453,6 +459,7 @@ function TeamPanel() {
   const [name, setName] = useState("");
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState<string>();
+  const [page, setPage] = useState(false);
   const run = async (what: string, f: () => Promise<void>) => {
     setBusy(what);
     try { await f(); } catch (e: any) { useOnline.setState({ error: e.message }); } finally { setBusy(undefined); }
@@ -470,6 +477,7 @@ function TeamPanel() {
             </div>
             <Group gap={4} wrap="nowrap">
               <Tooltip label="Copy the join code"><ActionIcon size="sm" variant="subtle" color="gray" onClick={() => copyText(t.code)}><IconCopy size={13} /></ActionIcon></Tooltip>
+              <Button size="compact-xs" variant="subtle" onClick={() => setPage(true)}>Team page</Button>
               <Button size="compact-xs" variant="subtle" color="red" loading={busy === "leave"} onClick={() => run("leave", o.leaveTeam)}>Leave</Button>
             </Group>
           </Group>
@@ -477,11 +485,12 @@ function TeamPanel() {
             {t.members.map((m) => (
               <Group key={m.guest} gap={8} py={1} wrap="nowrap">
                 <span className={"presence" + (m.online ? " on" : "")} />
-                <Text size="sm" truncate fw={m.guest === o.profile?.id ? 700 : 400}>{m.name}{m.guest === o.profile?.id ? " (you)" : ""}</Text>
+                <Text size="sm" truncate fw={m.guest === o.profile?.id ? 700 : 400} style={{ cursor: "pointer" }} onClick={() => openProfile(m.guest)}>{m.name}{m.guest === o.profile?.id ? " (you)" : ""}</Text>
               </Group>
             ))}
           </div>
           <Text size="xs" c="dimmed" mt={4}>Take on other teams in a team battle: make an arena under Tournaments and add the teams' codes.</Text>
+          <TeamModal opened={page} onClose={() => setPage(false)} />
         </>
       ) : (
         <>
@@ -628,7 +637,7 @@ function ArenaPanel() {
           <Group key={x.guest} gap={8} wrap="nowrap" py={2} style={{ fontWeight: x.guest === o.profile?.id ? 800 : undefined }}>
             <Text size="xs" w={18} c="dimmed">{i + 1}</Text>
             <span className={"presence" + (x.active ? " on" : "")} />
-            <Text size="sm" style={{ flex: 1 }} truncate>{x.name}{x.streak >= 2 ? " 🔥" : ""}</Text>
+            <Text size="sm" style={{ flex: 1, cursor: "pointer" }} truncate onClick={() => openProfile(x.guest)}>{x.name}{x.streak >= 2 ? " 🔥" : ""}</Text>
             {x.playing && <IconSwords size={12} />}
             <Text size="xs" c="dimmed">{x.games}g</Text>
             <Text size="sm" fw={700} w={30} ta="right">{x.score}</Text>
@@ -678,7 +687,7 @@ function SwissPanel() {
         {w.standings.map((x, i) => (
           <Group key={x.guest} gap={8} wrap="nowrap" py={2} style={{ fontWeight: x.guest === o.profile?.id ? 800 : undefined, opacity: x.withdrawn ? 0.5 : 1 }}>
             <Text size="xs" w={18} c="dimmed">{i + 1}</Text>
-            <Text size="sm" style={{ flex: 1 }} truncate>{x.name}</Text>
+            <Text size="sm" style={{ flex: 1, cursor: "pointer" }} truncate onClick={() => openProfile(x.guest)}>{x.name}</Text>
             <Tooltip label="Buchholz: the sum of your opponents' scores"><Text size="xs" c="dimmed">{x.buchholz}</Text></Tooltip>
             <Text size="sm" fw={700} w={30} ta="right">{x.points}</Text>
           </Group>
@@ -892,7 +901,8 @@ export function OnlineGame() {
   const claimable = away >= ABANDON_MS && g.ply >= 2;
 
   const opp = opponent ? g[opponent] : undefined;
-  const oppGuest = opp?.guest && opp.guest !== o.profile?.id ? opp.guest : undefined;
+  const botGame = isBot(opp?.guest);
+  const oppGuest = opp?.guest && opp.guest !== o.profile?.id && !botGame ? opp.guest : undefined;
   const canFriend = !!oppGuest && !o.friends.some((f) => f.id === oppGuest);
   const arenaBreak = g.arena && o.arena?.info.id === g.arena && g.status === "finished" && seat ? Math.max(0, ARENA_BREAK_MS - (Date.now() - (o.endedAt ?? 0))) : undefined;
   const casual = !!seat && !g.rated && !g.arena && !g.swiss;
@@ -924,6 +934,12 @@ export function OnlineGame() {
             </Tooltip>
           ))}>
           <Group gap={8} wrap="nowrap">{(queued || (o.challenging && g.status === "waiting")) && <Loader size="xs" />}<Text fw={700}>{resultText}</Text></Group>
+          {queued && o.bots.length > 0 && (
+            <Button mt={6} size="xs" variant="subtle" leftSection={<IconRobot size={13} />}
+              onClick={async () => { const q = o.queue!; await o.leaveQueue(); await o.playBot("amara", { minutes: q.minutes, increment: q.increment, color: "random", variant: q.variant === "chess960" ? "chess960" : "chess" }).catch((e) => useOnline.setState({ error: e.message })); }}>
+              Play a bot instead
+            </Button>
+          )}
           {queued ? <Text size="sm" c="dimmed">In the queue for {tc(o.queue!.minutes, o.queue!.increment)} {variantLabel(o.queue!.variant)}, {o.queue!.rated ? "rated" : "casual"}. {range === Infinity ? "Open to any rating now." : `Looking within ±${range} of your rating.`}</Text>
             : g.status === "waiting" && !o.challenging && <Text size="sm" c="dimmed">{g.days ? "It stays listed for three days. You can leave this screen: the game shows up under Correspondence when someone accepts." : g.public ? "Anyone in the lobby can take it." : "Only someone with the code can join."}{g.days ? "" : " It starts as soon as they join."}</Text>}
           {pending && (
@@ -966,12 +982,14 @@ export function OnlineGame() {
               {casual && g.status === "playing" && g.takeback !== opponent && g.ply >= (mine === "white" ? 1 : 2) && (
                 <Tooltip label="Ask to take back your last move"><Button size="xs" variant="default" disabled={g.takeback === mine} leftSection={<IconArrowBackUp size={13} />} onClick={() => o.takeback()}>{g.takeback === mine ? "Takeback asked" : "Takeback"}</Button></Tooltip>
               )}
-              {g.status === "finished" && !g.arena && !g.swiss && <Button size="xs" onClick={() => o.act("rematch")}>{g.rematch ? "Accept rematch" : "Rematch"}</Button>}
+              {g.status === "finished" && botGame && <Button size="xs" onClick={() => o.playBot(String(opp?.guest).slice(4), { minutes: g.minutes, increment: g.increment, color: mine === "white" ? "black" : "white", variant: g.variant === "chess960" ? "chess960" : "chess" }).catch((e) => useOnline.setState({ error: e.message }))}>Play again</Button>}
+              {g.status === "finished" && !g.arena && !g.swiss && !g.simul && !botGame && <Button size="xs" onClick={() => o.act("rematch")}>{g.rematch ? "Accept rematch" : "Rematch"}</Button>}
               {oppGuest && g.status !== "waiting" && (
                 <Menu position="bottom-end" withinPortal>
                   <Menu.Target><ActionIcon size="md" variant="subtle" color="gray" aria-label="More about your opponent"><IconDots size={15} /></ActionIcon></Menu.Target>
                   <Menu.Dropdown>
                     <Menu.Label>{opp?.name}</Menu.Label>
+                    <Menu.Item onClick={() => openProfile(oppGuest)}>View profile</Menu.Item>
                     {canFriend && <Menu.Item leftSection={<IconUserPlus size={14} />} onClick={() => o.addFriend({ id: oppGuest, name: opp?.name ?? "Friend" })}>Add as a friend</Menu.Item>}
                     <Menu.Item leftSection={<IconBan size={14} />} color="red" onClick={() => o.block(oppGuest)}>Block</Menu.Item>
                     <Menu.Divider />
@@ -1039,6 +1057,7 @@ export function OnlineGame() {
             {review.prep && mine && <PrepNote prep={review.prep} color={mine} />}
           </Panel>
         )}
+        {o.simul && o.simul.info.host === o.profile?.id && o.simul.info.status !== "open" && <SimulPanel />}
         <Panel grow pad={false} title="Moves"><MoveList tree={tree} editable={false} /></Panel>
         {seat && g.status !== "waiting" && <Notes gameId={g.id} />}
         {(seat || showRoom) && (

@@ -18,7 +18,7 @@ export interface Puzzle {
 }
 
 /** "battle" is a race against another player online (lib/battle.ts runs it). */
-export type PuzzleMode = "rated" | "rush" | "mistakes" | "daily" | "pack" | "battle" | "storm";
+export type PuzzleMode = "rated" | "rush" | "mistakes" | "daily" | "pack" | "battle" | "storm" | "learn";
 export type PuzzleStatus = "loading" | "solving" | "wrong" | "solved" | "revealed" | "empty" | "rushOver";
 
 export interface PuzzleStats {
@@ -196,14 +196,14 @@ export const usePuzzles = create<State>((set, get) => {
 
     load: async () => {
       if (get().loaded) return;
-      const text = await fetch("/data/puzzles.tsv").then((r) => r.text()).catch(() => "");
+      const text = await fetch(`${import.meta.env.BASE_URL}data/puzzles.tsv`).then((r) => r.text()).catch(() => "");
       const all: Puzzle[] = [];
       for (const line of text.split("\n")) {
         const c = line.split("\t");
         if (c.length >= 5) all.push({ id: c[0], fen: c[1], moves: c[2].split(" "), rating: parseInt(c[3], 10) || 1500, themes: c[4].split(" ") });
       }
       set({ all, loaded: true });
-      if (!["rush", "battle", "storm"].includes(get().mode)) get().next();
+      if (!["rush", "battle", "storm", "learn"].includes(get().mode)) get().next();
     },
 
     daily: () => {
@@ -231,7 +231,7 @@ export const usePuzzles = create<State>((set, get) => {
         generation++;
         set({ puzzle: undefined, status: "rushOver", rushScore: 0, rushStrikes: 0 });
       } else if (mode === "pack") { generation++; set({ puzzle: undefined, status: "empty", packId: undefined }); }
-      else if (mode === "battle" || mode === "storm") { generation++; set({ puzzle: undefined, status: "empty" }); }
+      else if (mode === "battle" || mode === "storm" || mode === "learn") { generation++; set({ puzzle: undefined, status: "empty" }); }
       else get().next();
     },
 

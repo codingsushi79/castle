@@ -6,8 +6,32 @@
       "destination": "/api?r=g&id=:code"
     },
     {
+      "source": "/p/:id",
+      "destination": "/api?r=p&id=:id"
+    },
+    {
       "source": "/mod",
       "destination": "/api?r=mod"
+    },
+    {
+      "source": "/alerts",
+      "destination": "/api?r=alerts"
+    },
+    {
+      "source": "/sw.js",
+      "destination": "/api?r=sw"
+    },
+    {
+      "source": "/manifest.webmanifest",
+      "destination": "/api?r=manifest"
+    },
+    {
+      "source": "/play",
+      "destination": "/play/index.html"
+    },
+    {
+      "source": "/play/((?!assets/|pieces/|data/|sounds/|icon).*)",
+      "destination": "/play/index.html"
     },
     {
       "source": "/api/((?!live$).*)",

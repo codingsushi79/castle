@@ -14,9 +14,13 @@ export async function loadServer() {
       entryPoints: [path.join(here, `../api/${name}.ts`)], bundle: true, platform: "node", format: "esm",
       outfile: path.join(out, `${name}.mjs`), logLevel: "warning",
       alias: { "@neondatabase/serverless": path.join(here, "neon-shim.mjs") },
-      external: ["@electric-sql/pglite", "ws"],
+      external: ["@electric-sql/pglite", "ws", "web-push"],
     });
   }
+  await build({
+    entryPoints: [path.join(here, "bot-entry.ts")], bundle: true, platform: "node", format: "esm", outfile: path.join(out, "bot-entry.mjs"), logLevel: "warning",
+    alias: { "@neondatabase/serverless": path.join(here, "neon-shim.mjs") }, external: ["@electric-sql/pglite", "ws", "web-push"],
+  });
   const api = await import(pathToFileURL(path.join(out, "index.mjs")).href);
   const { db } = await import(pathToFileURL(path.join(here, "neon-shim.mjs")).href);
   const call = async (p, body) => {

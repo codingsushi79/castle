@@ -97,7 +97,7 @@ export async function gameGif(tree: GameTree, flipped = false, size = 400): Prom
   const set = settings.pieceSet === "letter" ? "cburnett" : settings.pieceSet;
   const names = ["K", "Q", "R", "B", "N", "P"];
   const pieces = new Map<string, HTMLImageElement>();
-  for (const c of ["w", "b"]) for (const n of names) pieces.set(c + n, await loadImage(`/pieces/${set}/${c}${n}.svg`));
+  for (const c of ["w", "b"]) for (const n of names) pieces.set(c + n, await loadImage(`${import.meta.env.BASE_URL}pieces/${set}/${c}${n}.svg`));
   const canvas = document.createElement("canvas");
   canvas.width = canvas.height = size;
   const ctx = canvas.getContext("2d", { willReadFrequently: true })!;

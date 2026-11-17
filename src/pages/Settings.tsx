@@ -7,6 +7,7 @@ import { prettyCombo, recordNextCombo, SHORTCUTS, useShortcuts } from "../lib/sh
 import { call } from "../lib/storage";
 import { isBeta, useUpdates, versionLabel } from "../lib/updates";
 import { NotesText, openWhatsNew } from "../components/WhatsNew";
+import { markAsked, reportsOn, setReports } from "../lib/errors";
 import { Progress } from "@mantine/core";
 import { getVersion } from "@tauri-apps/api/app";
 import { useEffect } from "react";
@@ -43,7 +44,7 @@ export default function SettingsPage() {
             {PIECE_SETS.map((name) => (
               <div key={name} className="pressable" onClick={() => set({ pieceSet: name })}
                 style={{ padding: "4px 8px", borderRadius: 6, textAlign: "center", background: settings.pieceSet === name ? "var(--mantine-primary-color-filled)" : "var(--bg-raised)" }}>
-                <img src={`/pieces/${name}/wN.svg`} width={34} height={34} alt="" />
+                <img src={`${import.meta.env.BASE_URL}pieces/${name}/wN.svg`} width={34} height={34} alt="" />
                 <Text size="xs" tt="capitalize">{name}</Text>
               </div>
             ))}
@@ -182,6 +183,14 @@ function DataCard() {
   );
 }
 
+function ErrorReportsSwitch() {
+  const [on, setOn] = useState(reportsOn());
+  return (
+    <Switch mt="sm" label="Send error reports" checked={on} onChange={(e) => { setOn(e.currentTarget.checked); setReports(e.currentTarget.checked); markAsked(); }}
+      description="When something goes wrong, send the version, the page and the error (with folder names removed), so it can be fixed. Nothing personal." />
+  );
+}
+
 function UpdatesCard() {
   const u = useUpdates();
   const [version, setVersion] = useState("");
@@ -221,6 +230,7 @@ function UpdatesCard() {
         </div>
       )}
       <Switch mt="sm" label="Check for updates automatically, and download them in the background" checked={u.auto} onChange={(e) => u.setAuto(e.currentTarget.checked)} />
+      <ErrorReportsSwitch />
       <Switch mt="sm" label="Keep Castle running in the menu bar when its window is closed" checked={u.background} onChange={(e) => u.setBackground(e.currentTarget.checked)}
         description="So you still get alerts for your correspondence moves and challenges. Quit from the menu bar (or tray) icon." />
       <Group mt="md" justify="space-between" align="flex-start" wrap="nowrap">

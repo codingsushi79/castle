@@ -60,6 +60,46 @@ export const teamRoutes: Record<string, Handler> = {
     return json({ ok: true });
   },
 
+  /**
+   * The team page for a member: members with their ratings, and the team's
+   * battles with where it finished. Its chat room is "team:<id>:<code>", which
+   * only members know.
+   */
+  "POST team/page": async (_r, _u, b) => {
+    const p = await verified(b.token);
+    if (!p) return fail("Your rating token is not valid.", 401);
+    const t = await teamOf(p.id);
+    if (!t) return json({ team: null });
+    const ratings = await sql`select id, profile from guests where id = any(${t.members.map((m) => m.guest)})`;
+    const by = new Map(ratings.map((r) => [r.id, r.profile ?? {}]));
+    const battles = await sql`select a.id, a.name, a.ends_at, a.team_leaders from arena_teams x join arenas a on a.id = x.arena_id where x.team_id = ${t.id} order by a.starts_at desc limit 20`;
+    const results = [];
+    for (const a of battles) {
+      const players = await sql`select team_id, score from arena_players where arena_id = ${a.id} and team_id is not null order by score desc`;
+      const totals = new Map<string, number>();
+      const counted = new Map<string, number>();
+      for (const pl of players) {
+        if ((counted.get(pl.team_id) ?? 0) >= a.team_leaders) continue;
+        counted.set(pl.team_id, (counted.get(pl.team_id) ?? 0) + 1);
+        totals.set(pl.team_id, (totals.get(pl.team_id) ?? 0) + pl.score);
+      }
+      const teams = (await sql`select count(*)::int as n from arena_teams where arena_id = ${a.id}`)[0].n;
+      const mine = totals.get(t.id) ?? 0;
+      results.push({ id: a.id, name: a.name, endsAt: Number(a.ends_at), score: mine, rank: 1 + [...totals.values()].filter((v) => v > mine).length, teams });
+    }
+    return json({
+      team: {
+        ...t, room: `team:${t.id}:${t.code}`,
+        members: t.members.map((m) => {
+          const prof = by.get(m.guest) as any;
+          const best = Object.entries((prof?.ratings ?? {}) as Record<string, { r: number; g: number }>).sort((x, y) => y[1].g - x[1].g)[0];
+          return { ...m, rating: best ? best[1].r : prof?.rating ?? 1500, category: best ? best[0] : null };
+        }),
+        battles: results,
+      },
+    });
+  },
+
   /** A team by its code, for checking before a team battle. */
   "GET team": async (_r, u) => {
     const t = (await sql`select t.id, t.code, t.name, (select count(*)::int from team_members m where m.team_id = t.id) as members

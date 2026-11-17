@@ -1,5 +1,28 @@
 # Castle changelog
 
+## 2.3.1-3
+
+The third beta of Castle 2.3.1.
+
+### Castle Online in your browser
+- **Play from any browser** at castle-online.vercel.app/play: quick pairing, friends, tournaments, Castle TV, ranked puzzles and studies, on a computer or a phone. Engines, your game library and training stay in the app.
+- **Phone alerts:** link your phone (Play → Online → Ratings & transfer → Phone alerts) by scanning a QR code, and get a notification for correspondence moves and challenges even when Castle is closed.
+
+### Play
+- **Bots:** play Pip, Nora, Viktor, Amara, Dmitri or Ingrid any time, even when nobody else is online. They run on the server, so they work in the browser too. Bot games are never rated.
+- **Simuls:** host a simultaneous exhibition and play everyone at once, or join one and take on the host.
+- **Teams:** each team now has a page with members' ratings, its battle history and a private team chat.
+- **Profiles:** click a player's name to see their ratings, trophies from arenas and Swiss tournaments, and recent games. Every profile also has a page you can share.
+
+### Learning
+- **Studies:** analysis in chapters, kept online. Share the view link so others can follow along, or the edit link to work on it together, with changes showing up as they're made.
+- **Lessons:** short guided lessons on checkmates, tactics and endgames (Puzzles → Learn), each with worked examples and practice puzzles.
+- **Castle Online explorer:** see what people play on Castle Online from any position (Analysis → Explorer → Castle Online).
+
+### Reliability
+- **Error reports (optional):** when something goes wrong, Castle can send the error so it can be fixed. You're asked once, and can change it in Settings.
+- **Release notes display properly:** headings, lists, bold, links and code in update notes are now formatted instead of shown as raw text.
+
 ## 2.3.1-2
 
 The second beta of Castle 2.3.1.

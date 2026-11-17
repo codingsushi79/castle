@@ -9,6 +9,7 @@ import { clockText } from "../lib/storage";
 import { useApp } from "../lib/store";
 import { usePacks } from "../lib/packs";
 import { useRace } from "../lib/race";
+import { LearnPage } from "../components/Lessons";
 import { api, useOnline } from "../lib/online";
 import { IconPackage, IconTrash } from "@tabler/icons-react";
 import { ActionIcon } from "@mantine/core";
@@ -24,6 +25,11 @@ export default function PuzzlesPage() {
   const dailyDone = p.stats.dailySolved.includes(dayNumber());
   const raceKind = useRace((s) => s.kind);
   const raceError = useRace((s) => s.error);
+  if (p.mode === "learn") return <LearnPage toolbar={
+    <div className="toolbar" style={{ margin: "-14px -16px 6px" }}>
+      <SegmentedControl value={p.mode} onChange={(v) => p.setMode(v as PuzzleMode)}
+        data={[{ value: "rated", label: "Rated" }, { value: "rush", label: "Rush" }, { value: "mistakes", label: "My mistakes" }, { value: "daily", label: "Daily" }, { value: "pack", label: "Packs" }, { value: "storm", label: "Storm" }, { value: "battle", label: "Battle" }, { value: "learn", label: "Learn" }]} />
+    </div>} />;
   if (p.mode === "battle" || p.mode === "storm" || (p.mode === "rush" && raceKind === "rush")) return <RacePage />;
 
   const status = {
@@ -41,7 +47,7 @@ export default function PuzzlesPage() {
       <div className="boardcol">
         <div className="toolbar" style={{ margin: "-14px -16px 6px" }}>
           <SegmentedControl value={p.mode} onChange={(v) => p.setMode(v as PuzzleMode)}
-            data={[{ value: "rated", label: "Rated" }, { value: "rush", label: "Rush" }, { value: "mistakes", label: `My mistakes${p.mistakes.length ? ` (${p.mistakes.length})` : ""}` }, { value: "daily", label: "Daily" }, { value: "pack", label: "Packs" }, { value: "storm", label: "Storm" }, { value: "battle", label: "Battle" }]} />
+            data={[{ value: "rated", label: "Rated" }, { value: "rush", label: "Rush" }, { value: "mistakes", label: `My mistakes${p.mistakes.length ? ` (${p.mistakes.length})` : ""}` }, { value: "daily", label: "Daily" }, { value: "pack", label: "Packs" }, { value: "storm", label: "Storm" }, { value: "battle", label: "Battle" }, { value: "learn", label: "Learn" }]} />
           <span style={{ flex: 1 }} />
           <Text size="xs" c="dimmed">{p.loaded ? `${p.all.length.toLocaleString()} puzzles` : "Loading…"}</Text>
         </div>
@@ -266,7 +272,7 @@ function RacePage() {
       <div className="boardcol">
         <div className="toolbar" style={{ margin: "-14px -16px 6px" }}>
           <SegmentedControl value={p.mode} onChange={(m) => { r.leave(); p.setMode(m as PuzzleMode); }}
-            data={[{ value: "rated", label: "Rated" }, { value: "rush", label: "Rush" }, { value: "mistakes", label: "My mistakes" }, { value: "daily", label: "Daily" }, { value: "pack", label: "Packs" }, { value: "storm", label: "Storm" }, { value: "battle", label: "Battle" }]} />
+            data={[{ value: "rated", label: "Rated" }, { value: "rush", label: "Rush" }, { value: "mistakes", label: "My mistakes" }, { value: "daily", label: "Daily" }, { value: "pack", label: "Packs" }, { value: "storm", label: "Storm" }, { value: "battle", label: "Battle" }, { value: "learn", label: "Learn" }]} />
         </div>
         <div className={"boardrow" + (r.flash === "wrong" ? " shake" : "")}>
           <Board key={runView ? `${runView.id}-${runView.index}` : "idle"} fen={r.fen} orientation={r.userColor} lastMove={r.answer ?? r.lastMove}

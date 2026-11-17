@@ -12,7 +12,7 @@ Castle comes with its own engine, Wasabi 2.1, and also uses any UCI engine you h
 
 ## Castle Online
 
-Play other Castle users from the Play page (opponent: Online) with no account: everyone is a guest. Quick pairing finds someone near your rating (kept per speed and per variant) in standard chess or any of eight variants, live or by correspondence; you can also play friends by code or challenge, join arenas and Swiss tournaments, race through checked puzzle battles, watch Castle TV with a spectator chat, and share games as links, PGN or GIFs. Moves go directly between the two players, and the small server in `server/` (Vercel, Postgres) checks them, keeps the clocks, stores games for watching, and seals each guest's rating so it can't be edited.
+Play other Castle users from the Play page (opponent: Online) with no account: everyone is a guest. Quick pairing finds someone near your rating (kept per speed and per variant) in standard chess or any of eight variants, live or by correspondence; you can also play friends by code or challenge, join arenas and Swiss tournaments, race through checked puzzle battles, watch Castle TV with a spectator chat, and share games as links, PGN or GIFs. The same online play runs in a browser at https://castle-online.vercel.app/play (built with `npm run build:web` into `server/public/play`, which the server serves as static files). Moves go directly between the two players, and the small server in `server/` (Vercel, Postgres) checks them, keeps the clocks, stores games for watching, and seals each guest's rating so it can't be edited.
 
 ## Building
 

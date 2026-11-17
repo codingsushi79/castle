@@ -39,7 +39,7 @@ export interface GameView {
   minutes: number; increment: number; white: Side; black: Side;
   variant?: OnlineVariant; fen?: string | null; arena?: string | null;
   /** Correspondence: days per move (the clocks then count down days). */
-  days?: number | null; category?: string | null; swiss?: string | null; round?: number | null;
+  days?: number | null; category?: string | null; swiss?: string | null; round?: number | null; simul?: string | null;
   berserk?: Record<Color, boolean>;
   /** Goes up when moves are taken back; a takeback request pending from this colour. */
   rev?: number; takeback?: Color | null;
@@ -70,6 +70,28 @@ export interface StatGame {
   id: string; code: string; color: Color; score: number; category: string | null; variant: string; rated: boolean; reason: string | null;
   rating: number | null; after: number | null; opponent: string | null; opponentRating: number | null; moves: string[]; at: number;
 }
+export interface BotInfo { id: string; name: string; about: number; style: string }
+export interface SimulInfo {
+  id: string; name: string; host: string; hostName: string; hostRating: number | null; minutes: number; increment: number;
+  variant: OnlineVariant; hostColor: string; seats: number; status: "open" | "running" | "finished";
+  players: { guest: string; name: string; rating: number | null; game: string | null }[];
+}
+export interface PublicProfile {
+  guest: string; name: string; online: boolean; since: number; ratings: Record<string, { r: number; g: number; p: number }>; rating: number;
+  games: number; wins: number; draws: number; losses: number; team: string | null;
+  trophies: { kind: "arena" | "swiss"; name: string; rank: number; score: number; at: number }[]; recent: GameView[];
+}
+export interface TeamPage extends Team {
+  room: string;
+  members: { guest: string; name: string; online: boolean; rating: number; category: string | null }[];
+  battles: { id: string; name: string; endsAt: number; score: number; rank: number; teams: number }[];
+}
+/** Bots' games are marked with a "bot:" guest id. */
+export const isBot = (guest?: string | null) => !!guest && guest.startsWith("bot:");
+const studyListeners = new Set<(id: string) => void>();
+/** Called when someone else saves a study this app is looking at. */
+export function onStudyChange(fn: (id: string) => void) { studyListeners.add(fn); return () => { studyListeners.delete(fn); }; }
+
 export const TV_CHANNELS = ["all", "bullet", "blitz", "rapid", "classical", "chess960", "crazyhouse", "atomic", "kingofthehill", "3check", "antichess", "horde", "racingkings"];
 export interface RoomLine { id: number; name: string; kind: "text" | "react"; text: string; at: number; guest?: string | null }
 export interface OpenBattle { id: string; code: string; name: string; minutes: number }
@@ -185,6 +207,12 @@ interface State {
   /** Watching Castle TV: the next top game follows when this one ends. */
   tv: boolean;
   tvChannel: string;
+  bots: BotInfo[];
+  simuls: SimulInfo[];
+  /** The simul this player is in (hosting or playing), with its games. */
+  simul?: { info: SimulInfo; games: GameView[]; seats: Seat[] };
+  /** Rooms to follow besides the game and tournament ones (an open study). */
+  extraRooms: string[];
   leaderCategory: string;
   team?: Team | null;
   /** Set when an administrator has suspended this player. */
@@ -234,6 +262,22 @@ interface State {
   loadStats: () => Promise<StatGame[]>;
   /** After reviewing a finished game, tells the server both sides' accuracy (for spotting engine help). */
   reportAccuracy: (gameId: string, white?: number, black?: number) => void;
+  refreshBots: () => Promise<void>;
+  playBot: (bot: string, o: { minutes: number; increment: number; color: string; variant: OnlineVariant }) => Promise<void>;
+  refreshSimuls: () => Promise<void>;
+  createSimul: (o: { title: string; minutes: number; increment: number; seats: number; color: string; variant: OnlineVariant }) => Promise<void>;
+  joinSimul: (id: string) => Promise<void>;
+  leaveSimul: () => Promise<void>;
+  startSimul: () => Promise<void>;
+  /** The host switches to one of their boards. */
+  openSimulBoard: (gameId: string) => void;
+  alertsCode: () => Promise<{ code: string; url: string }>;
+  alertDevices: (clear?: boolean) => Promise<number>;
+  testAlert: () => Promise<void>;
+  teamPage: () => Promise<TeamPage | null>;
+  profileOf: (guest: string) => Promise<PublicProfile>;
+  setExtraRooms: (rooms: string[]) => void;
+  sayToTeam: (room: string, text: string) => Promise<void>;
   setLeaderCategory: (c: string) => void;
   addFriend: (f: Friend) => void;
   removeFriend: (id: string) => void;
@@ -254,6 +298,7 @@ let roomPoll: ReturnType<typeof setInterval> | undefined;
 let inboxPoll: ReturnType<typeof setInterval> | undefined;
 let arenaPoll: ReturnType<typeof setInterval> | undefined;
 let swissPoll: ReturnType<typeof setInterval> | undefined;
+let simulPoll: ReturnType<typeof setInterval> | undefined;
 let sock: WebSocket | undefined;
 let sockDelay = 1000;
 let sockRetry: ReturnType<typeof setTimeout> | undefined;
@@ -341,7 +386,7 @@ export const useOnline = create<State>((set, get) => {
     if (sock?.readyState !== WebSocket.OPEN) return;
     const g = get().game, a = get().arena, w = get().swiss;
     sock.send(JSON.stringify({ t: "watch", games: g ? [g.id] : [] }));
-    sock.send(JSON.stringify({ t: "rooms", rooms: [g?.id, a && `arena:${a.info.id}`, w && `swiss:${w.info.id}`].filter(Boolean) }));
+    sock.send(JSON.stringify({ t: "rooms", rooms: [g?.id, a && `arena:${a.info.id}`, w && `swiss:${w.info.id}`, ...get().extraRooms].filter(Boolean) }));
   };
 
   const mergeRoom = (list: RoomLine[], lines: RoomLine[]) => {
@@ -370,6 +415,7 @@ export const useOnline = create<State>((set, get) => {
         if (m.room === get().game?.id) set({ room: mergeRoom(get().room, m.lines) });
         else if (m.room.startsWith("arena:") || m.room.startsWith("swiss:")) set({ tourRoom: mergeRoom(get().tourRoom, m.lines) });
       } else if (m.t === "inbox") inboxTick();
+      else if (m.t === "study" && typeof m.id === "string") for (const fn of studyListeners) fn(m.id);
     };
     ws.onclose = () => {
       if (sock !== ws) return;
@@ -542,6 +588,8 @@ export const useOnline = create<State>((set, get) => {
     set({ seat, game: undefined, chat: [], room: [], link: "connecting", premove: undefined });
     api<GameView>(`game?id=${encodeURIComponent(seat.id)}&key=${encodeURIComponent(seat.key)}`).then((v) => {
       set({ game: v, receivedAt: Date.now() });
+      // A bot has no app to connect to: its moves come with the server's answer.
+      if (isBot(v.white.guest) || isBot(v.black.guest)) { closePeer(); set({ link: "relay" }); }
       schedule();
     }).catch((e) => set({ error: e.message }));
     connectPeer();
@@ -662,6 +710,31 @@ export const useOnline = create<State>((set, get) => {
     swissPoll = setInterval(tick, 2000);
   };
 
+  /** In a simul: its games every few seconds; a player is seated in their game when it starts. */
+  const watchSimul = () => {
+    clearInterval(simulPoll);
+    const tick = async () => {
+      const w = get().simul;
+      if (!w) return clearInterval(simulPoll);
+      const r = await api<{ simul: SimulInfo; games: GameView[] }>(`simul?id=${encodeURIComponent(w.info.id)}`).catch(() => undefined);
+      if (!r || get().simul?.info.id !== w.info.id) return;
+      let seats = w.seats;
+      if (r.simul.status !== "open" && (!seats.length || seats.length < r.games.length)) {
+        seats = (await api<{ seats: Seat[] }>("simul/seats", { token: token(), id: w.info.id }).catch(() => ({ seats: [] as Seat[] }))).seats;
+      }
+      set({ simul: { info: r.simul, games: r.games, seats } });
+      const host = r.simul.host === get().profile?.id;
+      // A player has one board: open it as soon as the host starts.
+      if (!host && seats[0] && get().seat?.id !== seats[0].id && r.games.find((g) => g.id === seats[0].id)?.status === "playing") {
+        Sound.end();
+        notify("Simul", "The simul has started.");
+        sit(seats[0]);
+      }
+    };
+    tick();
+    simulPoll = setInterval(tick, 2500);
+  };
+
   /** Loads the chat of the arena or Swiss being played. */
   const loadTourRoom = async (room: string) => {
     const r = await api<{ lines: RoomLine[] }>(`chat?id=${encodeURIComponent(room)}&after=0`).catch(() => undefined);
@@ -724,6 +797,9 @@ export const useOnline = create<State>((set, get) => {
     tourRoom: [],
     tv: false,
     tvChannel: load("onlineTvChannel", "all"),
+    bots: [],
+    simuls: [],
+    extraRooms: [],
     leaderCategory: load("onlineLeaderCategory", "blitz"),
     setName: (name) => { save("onlineName", name); set({ name }); },
     start: async () => {
@@ -962,6 +1038,55 @@ export const useOnline = create<State>((set, get) => {
       if (channel) { save("onlineTvChannel", channel); set({ tvChannel: channel }); }
       return nextTV(channel ? "" : get().game?.id ?? "");
     },
+    refreshBots: async () => {
+      const r = await api<{ bots: BotInfo[] }>("bots").catch(() => undefined);
+      if (r) set({ bots: r.bots });
+    },
+    playBot: async (bot, o) => {
+      const seat = await api<Seat>("bot/play", { token: token(), name: get().name, bot, ...o });
+      sit(seat);
+    },
+    refreshSimuls: async () => {
+      const r = await api<{ simuls: SimulInfo[] }>("simuls").catch(() => undefined);
+      if (r) set({ simuls: r.simuls });
+    },
+    createSimul: async (o) => {
+      const r = await api<{ id: string }>("simul/create", { token: token(), name: get().name, ...o });
+      const s = await api<{ simul: SimulInfo; games: GameView[] }>(`simul?id=${encodeURIComponent(r.id)}`);
+      set({ simul: { info: s.simul, games: [], seats: [] } });
+      watchSimul();
+    },
+    joinSimul: async (id) => {
+      await api("simul/join", { token: token(), name: get().name, id });
+      const s = await api<{ simul: SimulInfo; games: GameView[] }>(`simul?id=${encodeURIComponent(id)}`);
+      set({ simul: { info: s.simul, games: s.games, seats: [] } });
+      watchSimul();
+    },
+    leaveSimul: async () => {
+      const w = get().simul;
+      clearInterval(simulPoll);
+      set({ simul: undefined });
+      if (w && w.info.status === "open") await api("simul/leave", { token: token(), id: w.info.id }).catch(() => {});
+    },
+    startSimul: async () => {
+      const w = get().simul;
+      if (!w) return;
+      await api("simul/start", { token: token(), id: w.info.id });
+      const seats = (await api<{ seats: Seat[] }>("simul/seats", { token: token(), id: w.info.id })).seats;
+      set({ simul: { ...w, seats } });
+      if (seats[0]) sit(seats[0]);
+    },
+    openSimulBoard: (gameId) => {
+      const seat = get().simul?.seats.find((x) => x.id === gameId);
+      if (seat && get().seat?.id !== seat.id) sit(seat);
+    },
+    alertsCode: () => api<{ code: string; url: string }>("alerts/code", { token: token() }),
+    alertDevices: async (clear = false) => (await api<{ devices: number }>("alerts/devices", { token: token(), clear })).devices,
+    testAlert: async () => { await api("alerts/test", { token: token() }); },
+    teamPage: async () => (await api<{ team: TeamPage | null }>("team/page", { token: token() })).team,
+    profileOf: (guest) => api<PublicProfile>(`profile?guest=${encodeURIComponent(guest)}`),
+    setExtraRooms: (extraRooms) => { set({ extraRooms }); sendWatch(); },
+    sayToTeam: async (room, text) => { await api("chat", { id: room, name: get().name, text: text.trim(), token: token() }); },
     takeback: () => get().act("takeback"),
     declineTakeback: () => get().act("takeback-decline"),
     loadNotes: async () => {

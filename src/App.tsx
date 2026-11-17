@@ -2,12 +2,16 @@ import { Tooltip } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import {
   IconActivity, IconBolt, IconBook2, IconBooks, IconChartLine, IconCpu, IconDeviceTv, IconFlag, IconPuzzle, IconSettings,
-  IconTarget, IconTrophy, IconUserCircle, IconWorld, IconDatabase, IconCommand,
+  IconTarget, IconTrophy, IconUserCircle, IconWorld, IconDatabase, IconCommand, IconNotebook,
 } from "@tabler/icons-react";
 import { ReactNode, useEffect, useState } from "react";
 import { CheatSheet, CommandPalette, openPalette } from "./components/Palette";
 import { WhatsNew } from "./components/WhatsNew";
 import { MiniTV } from "./components/MiniTV";
+import { ProfileModal } from "./components/OnlineExtras";
+import { ErrorBoundary } from "./components/ErrorBoundary";
+import { installErrorReporting, markAsked, reportsAsked, setReports } from "./lib/errors";
+import { Button as MButton, Group as MGroup } from "@mantine/core";
 import { useOnline } from "./lib/online";
 import { ChallengeCard } from "./pages/Online";
 import { useBatch } from "./lib/batch";
@@ -36,6 +40,7 @@ import ProgressPage from "./pages/Progress";
 import PuzzlesPage from "./pages/Puzzles";
 import RepertoirePage from "./pages/Repertoire";
 import SettingsPage from "./pages/Settings";
+import StudiesPage from "./pages/Studies";
 import TrainingPage from "./pages/Training";
 import WatchPage from "./pages/Watch";
 
@@ -49,6 +54,7 @@ const PAGES: { id: Page; title: string; icon: ReactNode; group: number }[] = [
   { id: "puzzles", title: "Puzzles", icon: <IconPuzzle size={21} />, group: 1 },
   { id: "training", title: "Training", icon: <IconTarget size={21} />, group: 1 },
   { id: "repertoire", title: "Repertoire", icon: <IconBook2 size={21} />, group: 1 },
+  { id: "studies", title: "Studies", icon: <IconNotebook size={21} />, group: 1 },
   { id: "progress", title: "Progress", icon: <IconChartLine size={21} />, group: 1 },
   { id: "library", title: "Library", icon: <IconBooks size={21} />, group: 2 },
   { id: "accounts", title: "Accounts", icon: <IconUserCircle size={21} />, group: 2 },
@@ -58,7 +64,7 @@ const PAGES: { id: Page; title: string; icon: ReactNode; group: number }[] = [
 const VIEWS: Record<Page, () => JSX.Element> = {
   play: PlayPage, online: OnlinePage, lichess: LichessPage, fics: FicsPage, watch: WatchPage, matches: MatchesPage, analysis: AnalysisPage,
   puzzles: PuzzlesPage, training: TrainingPage, repertoire: RepertoirePage, progress: ProgressPage, library: LibraryPage,
-  accounts: AccountsPage, engines: EnginesPage, settings: SettingsPage,
+  accounts: AccountsPage, engines: EnginesPage, settings: SettingsPage, studies: StudiesPage,
 };
 
 const say = (message: string) => notifications.show({ message, autoClose: 1800 });
@@ -127,6 +133,28 @@ export default function App() {
 
   useEffect(() => { const t = setTimeout(() => setSplash(false), 1400); return () => clearTimeout(t); }, []);
   useEffect(installShortcutListener, []);
+  useEffect(() => {
+    installErrorReporting();
+    // Ask once, a little after launch, whether to send error reports.
+    if (reportsAsked() || !isTauri) return;
+    const t = setTimeout(() => {
+      const id = "error-reports";
+      const answer = (on: boolean) => { setReports(on); markAsked(); notifications.hide(id); };
+      notifications.show({
+        id, autoClose: false, withCloseButton: false, title: "Help fix problems in Castle?",
+        message: (
+          <>
+            When something goes wrong, Castle can send the error (the version, the page and what failed, nothing personal) so it can be fixed. You can change this in Settings.
+            <MGroup gap={6} mt={8}>
+              <MButton size="xs" onClick={() => answer(true)}>Send error reports</MButton>
+              <MButton size="xs" variant="default" onClick={() => answer(false)}>No thanks</MButton>
+            </MGroup>
+          </>
+        ),
+      });
+    }, 20_000);
+    return () => clearTimeout(t);
+  }, []);
 
   useEffect(() => {
     useEngines.getState().refresh();
@@ -171,12 +199,13 @@ export default function App() {
 
   return (
     <>
-      {splash && <div className="splash"><div><img src="/pieces/cburnett/wR.svg" width={110} height={110} alt="" />Castle</div></div>}
+      {splash && <div className="splash"><div><img src={`${import.meta.env.BASE_URL}pieces/cburnett/wR.svg`} width={110} height={110} alt="" />Castle</div></div>}
       <GlobalActions onCheatSheet={() => setCheat(true)} />
       <CommandPalette />
       <CheatSheet opened={cheat} onClose={() => setCheat(false)} />
       <WhatsNew />
       <MiniTV />
+      <ProfileModal />
       <ChallengeStack />
       <div className="shell">
         <div className="titlebar" data-tauri-drag-region>
@@ -205,7 +234,7 @@ export default function App() {
           </Tooltip>
         </nav>
         <main className="main" key={page}>
-          <View />
+          <ErrorBoundary page={page}><View /></ErrorBoundary>
         </main>
         <footer className="statusbar">
           <span><IconCpu size={13} /> {available().length} of {engines.length} engines</span>

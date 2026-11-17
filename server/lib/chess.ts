@@ -135,3 +135,14 @@ export function positions(moves: string[], variant: Variant = "chess", initialFe
   }
   return out;
 }
+
+/** The position after a game's moves (moves that don't fit are skipped). */
+export function positionAfter(moves: string[], variant: Variant = "chess", initialFen?: string | null) {
+  const pos = startPosition(variant, initialFen);
+  for (const uci of moves) {
+    const raw = parseUci(uci);
+    const m = raw && normalizeMove(pos, raw);
+    if (m && pos.isLegal(m)) pos.play(m);
+  }
+  return pos;
+}

@@ -17,6 +17,7 @@ export { usePuzzles } from "${root}/src/lib/puzzles";
 export { useRepertoire, checkPrep } from "${root}/src/lib/repertoire";
 export { encodeGif } from "${root}/src/lib/gif";
 export { GameTree, positionOf, moveFromUci } from "${root}/src/lib/chess";
+export { LESSONS } from "${root}/src/lib/lessons";
 `);
   await build({
     entryPoints: [entry], bundle: true, platform: "node", format: "esm", outfile: path.join(here, ".build/client.mjs"), logLevel: "error",

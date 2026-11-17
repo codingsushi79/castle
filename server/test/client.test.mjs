@@ -37,7 +37,7 @@ globalThis.WebSocket = class extends WS {
 
 const { buildClient } = await import("./client-build.mjs");
 await buildClient();
-const { useOnline, ratingWindow, useRace, usePuzzles, useRepertoire, checkPrep, encodeGif, GameTree, positionOf, moveFromUci } = await import(pathToFileURL(path.join(here, ".build/client.mjs")).href);
+const { useOnline, ratingWindow, useRace, usePuzzles, useRepertoire, checkPrep, encodeGif, GameTree, positionOf, moveFromUci, LESSONS } = await import(pathToFileURL(path.join(here, ".build/client.mjs")).href);
 const o = () => useOnline.getState();
 const puzzles = new Map(JSON.parse(fs.readFileSync(path.join(here, "../lib/puzzles-data.ts"), "utf8").match(/= (".*");/)[1])
   .split("\n").map((l) => l.split("\t")).map(([id, fen, moves]) => [id, { fen, moves: moves.split(" ") }]));
@@ -210,6 +210,23 @@ const myStats = await o().loadStats();
 ok(myStats.length >= 1 && myStats.every((x) => x.color && typeof x.score === "number"), "the stats load");
 await o().leaveTeam();
 ok(o().team === null, "the app leaves a team");
+
+section("Lessons");
+const tsvRows = fs.readFileSync(path.join(root, "public/data/puzzles.tsv"), "utf8").split("\n").map((l) => l.split("\t")).filter((c) => c.length >= 5);
+for (const lesson of LESSONS) {
+  let fine = true;
+  for (const step of lesson.steps) {
+    const pos = positionOf(step.fen).clone();
+    for (const uci of [...(step.setup ? [step.setup] : []), ...step.moves]) {
+      const m = moveFromUci(pos, uci);
+      if (!m) { fine = false; console.log(`    ${lesson.id}: ${uci} is not legal`); break; }
+      pos.play(m);
+    }
+    if (step.mate && !pos.isCheckmate()) { fine = false; console.log(`    ${lesson.id}: the example doesn't end in mate`); }
+  }
+  const practice = tsvRows.filter((c) => Number(c[3]) <= lesson.practice.maxRating && lesson.practice.themes.some((t) => c[4].split(" ").includes(t))).length;
+  ok(fine && practice >= lesson.practice.count * 3, `lesson "${lesson.title}": examples check out, ${practice} practice puzzles`);
+}
 
 section("Repertoire check and GIFs");
 const rep = new GameTree();

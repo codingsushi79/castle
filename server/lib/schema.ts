@@ -129,6 +129,34 @@ const STEPS: string[][] = [
     `alter table guests add column if not exists ban_reason text`,
     `create table if not exists accuracy (game_id text not null, reporter text not null, white real, black real, created_at timestamptz not null default now(), primary key (game_id, reporter))`,
   ],
+  // 5: Castle 2.3.1 beta 3: error reports, phone alerts, simuls, bots, studies, explorer, team chat, profiles
+  [
+    `create table if not exists errors (
+       id bigserial primary key, version text, platform text, page text, message text not null, stack text,
+       created_at timestamptz not null default now())`,
+    `create index if not exists errors_time on errors (created_at desc)`,
+    `create table if not exists push_subs (endpoint text primary key, guest text not null, sub jsonb not null, created_at timestamptz not null default now())`,
+    `create index if not exists push_subs_guest on push_subs (guest)`,
+    `create table if not exists alert_codes (code text primary key, guest text not null, created_at timestamptz not null default now())`,
+    `alter table games add column if not exists simul_id text`,
+    `create table if not exists simuls (
+       id text primary key, name text not null, host text not null, host_name text not null, host_rating integer,
+       minutes real not null, increment integer not null, variant text not null default 'chess', host_color text not null,
+       seats integer not null, status text not null default 'open', created_at timestamptz not null default now())`,
+    `create table if not exists simul_players (simul_id text not null, guest text not null, name text not null, rating integer, game_id text,
+       primary key (simul_id, guest))`,
+    `create table if not exists studies (
+       id text primary key, edit_code text not null, title text not null, owner text not null, owner_name text not null,
+       created_at timestamptz not null default now(), updated_at timestamptz not null default now())`,
+    `create index if not exists studies_owner on studies (owner)`,
+    `create table if not exists study_chapters (
+       id text primary key, study_id text not null, idx integer not null, title text not null, pgn text not null default '',
+       rev integer not null default 0, updated_at timestamptz not null default now())`,
+    `create index if not exists study_chapters_study on study_chapters (study_id, idx)`,
+    `create table if not exists explorer_moves (epd text not null, uci text not null, san text not null,
+       white integer not null default 0, draws integer not null default 0, black integer not null default 0, primary key (epd, uci))`,
+    `create table if not exists flags (name text primary key, done_at timestamptz not null default now())`,
+  ],
 ];
 
 let ready: Promise<void> | undefined;

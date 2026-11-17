@@ -62,7 +62,7 @@ function applyLook(theme: string, set: string) {
 .cg-wrap coords:not(.black) coord:nth-child(odd),.cg-wrap coords.black coord:nth-child(even){color:${t.light};text-shadow:0 0 2px ${t.dark},0 0 2px ${t.dark},0 0 1px ${t.dark};}\n`;
   for (const [role, letter] of Object.entries(names)) {
     for (const color of ["white", "black"]) {
-      css += `.cg-wrap piece.${role}.${color},.piece-img.${role}.${color}{background-image:url(/pieces/${set}/${color[0]}${letter}.svg);}\n`;
+      css += `.cg-wrap piece.${role}.${color},.piece-img.${role}.${color}{background-image:url(${import.meta.env.BASE_URL}pieces/${set}/${color[0]}${letter}.svg);}\n`;
     }
   }
   let el = document.getElementById(styleId);

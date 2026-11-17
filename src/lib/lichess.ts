@@ -74,10 +74,16 @@ async function cachedJson<T>(url: string, auth = true): Promise<T> {
   return v;
 }
 
-export type ExplorerSource = "library" | "lichess" | "masters";
+/** "castle": games played on Castle Online. */
+export type ExplorerSource = "library" | "lichess" | "masters" | "castle";
 
 export async function explorer(source: ExplorerSource, fen: string, player?: string, color?: string): Promise<ExplorerMove[]> {
   if (source === "library") return db.explorer(fen, player, color);
+  if (source === "castle") {
+    const { api } = await import("./online");
+    const r = await api<{ moves: { san: string; white: number; draws: number; black: number }[] }>(`explorer?fen=${encodeURIComponent(fen)}`);
+    return r.moves.map((m) => ({ san: m.san, white: m.white, draws: m.draws, black: m.black }));
+  }
   const q = new URLSearchParams({ fen, topGames: "0", recentGames: "0", moves: "14" });
   if (source === "lichess") {
     q.set("speeds", "blitz,rapid,classical");

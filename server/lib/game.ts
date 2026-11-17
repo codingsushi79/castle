@@ -1,4 +1,4 @@
-import { canMate, Result, startFen, Variant, variantOf } from "./chess.js";
+import { canMate, replay, Result, startFen, Variant, variantOf } from "./chess.js";
 import { Color, other, ping, Row, sql } from "./db.js";
 import { categoryOf, gamesIn, ratingIn } from "./ratings.js";
 import { elo, open, Profile, randomId } from "./token.js";
@@ -89,6 +89,32 @@ export async function settle(g: Row): Promise<Row> {
   return g;
 }
 
+/**
+ * Plays a move for one side: checks it, updates the clocks (correspondence
+ * refills the days; otherwise the increment, unless berserk) and ends the game
+ * if the move does. Returns undefined for an illegal move, or the row as it
+ * stands (unchanged if another request got there first).
+ */
+export async function applyMove(g: Row, seat: Color, uci: string): Promise<Row | undefined> {
+  const moves = movesOf(g);
+  const r = replay([...moves, uci], ...variantFields(g));
+  if (!r.ok) return undefined;
+  const now = Date.now();
+  const c = clocks(g, now);
+  const ms = { white: Number(g.white_ms), black: Number(g.black_ms) };
+  if (g.days) ms[seat] = startMs({ minutes: Number(g.minutes), days: g.days });
+  else if (g.ply >= 1) ms[seat] = c[seat] + (g[`${seat}_berserk`] ? 0 : g.increment * 1000);
+  const rows = await sql`
+    update games set moves = ${[...moves, uci].join(" ")}, ply = ply + 1, white_ms = ${ms.white}, black_ms = ${ms.black},
+      last_move_at = ${now}, draw_offer = case when draw_offer = ${seat} then draw_offer else null end, takeback_offer = null, updated_at = now()
+    where id = ${g.id} and ply = ${g.ply} and status = 'playing' returning *`;
+  if (!rows.length) return (await load(g.id))!;
+  let next = rows[0];
+  await ping({ t: "game", id: next.id });
+  if (r.ended) next = await finish(next, r.ended.result, r.ended.reason);
+  return next;
+}
+
 /** Notes that a player is still there (at most every few seconds). */
 export async function markSeen(g: Row, seat: Color) {
   const now = Date.now();
@@ -111,7 +137,7 @@ export function view(g: Row) {
   return {
     id: g.id, code: g.code, status: g.status, rated: g.rated, public: g.public,
     minutes: g.minutes, increment: g.increment, days: g.days ?? null, variant: variantOf(g.variant), fen: g.initial_fen ?? null,
-    category: g.category ?? null, arena: g.arena_id ?? null, swiss: g.swiss_id ?? null, round: g.swiss_round ?? null,
+    category: g.category ?? null, arena: g.arena_id ?? null, swiss: g.swiss_id ?? null, round: g.swiss_round ?? null, simul: g.simul_id ?? null,
     berserk: { white: !!g.white_berserk, black: !!g.black_berserk },
     away: { white: away("white"), black: away("black") },
     white: { name: g.white_name, rating: g.white_rating, after: g.white_new, guest: g.white_guest },
@@ -183,15 +209,15 @@ export async function takeSeat(g: Row, p: Profile, name: string) {
 }
 
 /** Inserts a game with both players already seated (arenas and Swiss rounds). */
-export async function pairedGame(o: { minutes: number; increment: number; variant: Variant; arena?: string; swiss?: string; round?: number },
+export async function pairedGame(o: { minutes: number; increment: number; variant: Variant; arena?: string; swiss?: string; round?: number; simul?: string; rated?: boolean },
   white: { guest: string; name: string; profileRating: number | null }, black: { guest: string; name: string; profileRating: number | null }) {
   const id = randomId(), code = await freshCode(), wk = randomId(18), bk = randomId(18);
   const fen = o.variant === "chess" ? null : startFen(o.variant);
   const ms = startMs(o);
   const category = categoryOf(o.variant, o.minutes, o.increment);
-  await sql`insert into games (id, code, status, public, rated, minutes, increment, creator_color, variant, initial_fen, category, arena_id, swiss_id, swiss_round,
+  await sql`insert into games (id, code, status, public, rated, minutes, increment, creator_color, variant, initial_fen, category, arena_id, swiss_id, swiss_round, simul_id,
       white_guest, white_name, white_key, white_rating, black_guest, black_name, black_key, black_rating, white_ms, black_ms)
-    values (${id}, ${code}, 'playing', true, true, ${o.minutes}, ${o.increment}, 'random', ${o.variant}, ${fen}, ${category}, ${o.arena ?? null}, ${o.swiss ?? null}, ${o.round ?? null},
+    values (${id}, ${code}, 'playing', true, ${o.rated ?? true}, ${o.minutes}, ${o.increment}, 'random', ${o.variant}, ${fen}, ${category}, ${o.arena ?? null}, ${o.swiss ?? null}, ${o.round ?? null}, ${o.simul ?? null},
       ${white.guest}, ${white.name}, ${wk}, ${white.profileRating}, ${black.guest}, ${black.name}, ${bk}, ${black.profileRating}, ${ms}, ${ms})`;
   return { id, code, wk, bk };
 }

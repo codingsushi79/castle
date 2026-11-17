@@ -5,7 +5,7 @@ import { boardColors, useApp } from "./store";
 
 const images = new Map<string, Promise<HTMLImageElement>>();
 function pieceImage(set: string, code: string): Promise<HTMLImageElement> {
-  const url = `/pieces/${set}/${code}.svg`;
+  const url = `${import.meta.env.BASE_URL}pieces/${set}/${code}.svg`;
   if (!images.has(url)) {
     images.set(url, new Promise((resolve, reject) => {
       const img = new Image();

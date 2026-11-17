@@ -1,4 +1,5 @@
 import { fail, Handler, json, sql } from "./db.js";
+import { errorSummary } from "./errors.js";
 
 /**
  * Moderation. /mod is a small page for whoever holds ADMIN_KEY (a Vercel
@@ -55,7 +56,7 @@ export const modRoutes: Record<string, Handler> = {
     const banned = await sql`select id, name, banned_until, ban_reason from guests where banned_until > now() order by banned_until desc limit 100`;
     return json({
       reported: reported.map((r) => ({ ...r, chat: chat.filter((c) => c.guest === r.guest).slice(0, 6).map((c) => c.text) })),
-      flagged: await accuracyFlags(), banned,
+      flagged: await accuracyFlags(), banned, errors: await errorSummary(),
       thresholds: { games: FLAG_GAMES, accuracy: FLAG_ACCURACY },
     });
   },
@@ -110,6 +111,7 @@ async function load(){
   h+=d.reported.length?d.reported.map(r=>'<div class="card"><div class="row"><b>'+esc(r.name||"?")+'</b><span class="muted">'+esc(r.guest)+'</span><span>'+r.reporters+' reporter(s): '+esc(r.reasons.join(", "))+'</span>'+(r.banned_until&&new Date(r.banned_until)>new Date()?'<span class="err">banned until '+new Date(r.banned_until).toLocaleString()+'</span>':'')+'</div>'+(r.chat.length?'<div class="chat">'+r.chat.map(esc).join(" · ")+'</div>':'')+'<div>'+actions(r.guest)+'<button onclick="act(\\'mod/clear\\',\\''+r.guest+'\\')">Clear reports</button></div></div>').join(""):'<p class="muted">No reports.</p>';
   h+='<h2>Engine-like accuracy</h2><p class="muted">At least '+d.thresholds.games+' games reviewed by their opponents, averaging '+d.thresholds.accuracy+'% or more. A flag is a reason to look at their games, not proof.</p>';
   h+=d.flagged.length?d.flagged.map(f=>'<div class="card"><div class="row"><b>'+esc(f.name||"?")+'</b><span class="muted">'+esc(f.guest)+'</span><span>'+f.accuracy+'% over '+f.games+' games</span></div><div>'+actions(f.guest)+'</div></div>').join(""):'<p class="muted">Nobody is flagged.</p>';
+  h+='<h2>Error reports (last 7 days)</h2><p class="muted">Sent by players who turned error reports on.</p>'+(d.errors.length?d.errors.map(e=>'<div class="card"><div class="row"><b>'+e.count+'×</b><span>'+esc(e.message)+'</span></div><div class="muted">'+esc((e.versions||[]).join(", "))+' · '+esc((e.platforms||[]).join(", "))+' · '+esc(e.page||"")+' · last '+new Date(e.last).toLocaleString()+'</div>'+(e.stack?'<details><summary class="muted">Stack</summary><pre style="white-space:pre-wrap;font-size:11px">'+esc(e.stack)+'</pre></details>':'')+'</div>').join(""):'<p class="muted">No errors reported.</p>');
   h+='<h2>Banned</h2>'+(d.banned.length?d.banned.map(b=>'<div class="card row"><b>'+esc(b.name||"?")+'</b><span class="muted">'+esc(b.id)+'</span><span>until '+new Date(b.banned_until).toLocaleString()+(b.ban_reason?' · '+esc(b.ban_reason):'')+'</span><button onclick="act(\\'mod/unban\\',\\''+b.id+'\\')">Unban</button></div>').join(""):'<p class="muted">Nobody is banned.</p>');
   $("#out").innerHTML=h;}catch(e){$("#login").style.display="";$("#out").innerHTML='<p class="err">'+esc(e.message)+'</p>';}
 }

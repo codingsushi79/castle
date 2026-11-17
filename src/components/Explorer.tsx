@@ -40,7 +40,7 @@ export function ExplorerPanel({ tree }: { tree: GameTree }) {
     let live = true;
     setError(undefined);
     const timer = setTimeout(async () => {
-      if (source !== "library" && !(await lichessToken())) {
+      if ((source === "lichess" || source === "masters") && !(await lichessToken())) {
         if (live) { setNeedsToken(true); setMoves([]); }
         return;
       }
@@ -62,7 +62,7 @@ export function ExplorerPanel({ tree }: { tree: GameTree }) {
     <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
       <div style={{ padding: "8px 12px" }}>
         <SegmentedControl fullWidth value={source} onChange={(v) => { setSource(v as ExplorerSource); save("explorerSource", v); }}
-          data={[{ value: "library", label: "Library" }, { value: "lichess", label: "Lichess" }, { value: "masters", label: "Masters" }]} />
+          data={[{ value: "library", label: "Library" }, { value: "castle", label: "Castle Online" }, { value: "lichess", label: "Lichess" }, { value: "masters", label: "Masters" }]} />
       </div>
       <div style={{ flex: 1, overflowY: "auto" }}>
         {tree.rules !== "chess" ? (
@@ -77,7 +77,7 @@ export function ExplorerPanel({ tree }: { tree: GameTree }) {
         ) : !moves ? null : moves.length ? (
           <ExplorerRows moves={moves} onPlay={play} />
         ) : (
-          <Empty title="No games here">{source === "library" ? "No game in your library reached this position." : "This position has not been played."}</Empty>
+          <Empty title="No games here">{source === "library" ? "No game in your library reached this position." : source === "castle" ? "No Castle Online game has reached this position yet." : "This position has not been played."}</Empty>
         )}
       </div>
       {source === "library" && total > 0 && (

@@ -24,7 +24,7 @@ export const useOpenings = create<Book>((set, get) => ({
   all: [],
   load: async () => {
     if (get().loaded) return;
-    const text = await fetch("/data/openings.tsv").then((r) => r.text()).catch(() => "");
+    const text = await fetch(`${import.meta.env.BASE_URL}data/openings.tsv`).then((r) => r.text()).catch(() => "");
     const rows = text.split("\n").slice(1);
     const byEpd = new Map<string, Opening>();
     const lines: Book["lines"] = [];
