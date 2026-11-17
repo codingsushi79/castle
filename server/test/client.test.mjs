@@ -1,6 +1,5 @@
 // Drives Castle's real client code (src/lib) against the real server, in Node.
 // Needs the app's dependencies installed at the repository root. Run with: npm run test:client
-import { build } from "esbuild";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -36,20 +35,8 @@ globalThis.WebSocket = class extends WS {
   constructor(url) { super(String(url).replace("wss://castle-online.vercel.app/api/live", `ws://127.0.0.1:${port}`)); }
 };
 
-const entry = path.join(here, ".build/client-entry.ts");
-fs.writeFileSync(entry, `
-export { useOnline, ratingWindow } from "${root}/src/lib/online";
-export { useRace } from "${root}/src/lib/race";
-export { usePuzzles } from "${root}/src/lib/puzzles";
-export { useRepertoire, checkPrep } from "${root}/src/lib/repertoire";
-export { encodeGif } from "${root}/src/lib/gif";
-export { GameTree, positionOf, moveFromUci } from "${root}/src/lib/chess";
-`);
-await build({
-  entryPoints: [entry], bundle: true, platform: "node", format: "esm", outfile: path.join(here, ".build/client.mjs"), logLevel: "error",
-  nodePaths: [path.join(root, "node_modules")],
-  alias: { "@tauri-apps/plugin-notification": path.join(here, "notification-shim.mjs") },
-});
+const { buildClient } = await import("./client-build.mjs");
+await buildClient();
 const { useOnline, ratingWindow, useRace, usePuzzles, useRepertoire, checkPrep, encodeGif, GameTree, positionOf, moveFromUci } = await import(pathToFileURL(path.join(here, ".build/client.mjs")).href);
 const o = () => useOnline.getState();
 const puzzles = new Map(JSON.parse(fs.readFileSync(path.join(here, "../lib/puzzles-data.ts"), "utf8").match(/= (".*");/)[1])
@@ -201,6 +188,28 @@ await call("race/move", { id: bj.run, key: bj.key, index: 0, uci: "a1a1" });
 await until(() => r().race?.b.strikes === 1, 4000);
 ok(r().race.b.strikes === 1, "the opponent's checked score shows up");
 r().leave();
+
+section("Storm, teams and stats");
+await useRace.getState().startStorm();
+await until(() => r().ready, 5000);
+ok(r().kind === "storm" && r().run?.status === "running", "a storm starts from the app");
+const stormRun = r().run;
+const stormPos = positionOf(r().fen);
+const stormIds = (await db.query("select puzzles from runs where id = $1", [stormRun.id])).rows[0].puzzles;
+const stormSol = moveFromUci(stormPos, puzzles.get(stormIds[0]).moves[1]);
+const miss = [...stormPos.allDests()].flatMap(([from, tos]) => [...tos].map((to) => ({ from, to }))).find((m) => { const c = stormPos.clone(); c.play(m); return !c.isCheckmate() && !(m.from === stormSol.from && m.to === stormSol.to); });
+r().attempt(miss);
+await until(() => r().run?.strikes === 1, 4000);
+ok(r().run.endsAt === stormRun.endsAt - 10000 && r().run.status === "running", "a miss in a storm costs ten seconds and play goes on");
+r().leave();
+await o().createTeam("Play Testers");
+ok(o().team?.name === "Play Testers" && o().team.code.length === 6, "the app makes a team");
+await o().refreshTeam();
+ok(o().team?.members[0]?.guest === o().profile.id, "and lists its members");
+const myStats = await o().loadStats();
+ok(myStats.length >= 1 && myStats.every((x) => x.color && typeof x.score === "number"), "the stats load");
+await o().leaveTeam();
+ok(o().team === null, "the app leaves a team");
 
 section("Repertoire check and GIFs");
 const rep = new GameTree();

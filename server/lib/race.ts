@@ -34,10 +34,25 @@ function pick(count = 120): string[] {
 
 const GRACE = 1500; // a move sent just as the clock ends still counts
 
+/**
+ * Storm: one clock, no strikes. A miss costs ten seconds; a run of solves earns
+ * time at 5, 12, 20 and 30 in a row, then every 10 more.
+ */
+const STORM_PENALTY = 10_000;
+export function stormBonus(combo: number): number {
+  if (combo === 5) return 3000;
+  if (combo === 12) return 5000;
+  if (combo === 20) return 7000;
+  if (combo >= 30 && combo % 10 === 0) return 10_000;
+  return 0;
+}
+
+const out = (r: Row) => r.kind !== "storm" && r.strikes >= 3;
+
 function runStatus(r: Row, now = Date.now()) {
   if (!r.started_at) return "waiting";
   if (now < Number(r.started_at)) return "countdown";
-  if (r.strikes >= 3 || now > Number(r.ends_at) || r.idx >= r.puzzles.length) return "finished";
+  if (out(r) || now > Number(r.ends_at) || r.idx >= r.puzzles.length) return "finished";
   return "running";
 }
 
@@ -48,13 +63,13 @@ function runView(r: Row) {
   // Moves already played in this puzzle: the setup move, then the solver's and the replies so far.
   const played = p ? p.moves.slice(0, r.step) : [];
   return {
-    id: r.id, kind: r.kind, status: runStatus(r, now), score: r.score, strikes: r.strikes, index: r.idx,
+    id: r.id, kind: r.kind, status: runStatus(r, now), score: r.score, strikes: r.strikes, index: r.idx, combo: r.combo ?? 0,
     startedAt: r.started_at ? Number(r.started_at) : null, endsAt: r.ends_at ? Number(r.ends_at) : null, now,
     puzzle: p ? { id: p.id, fen: p.fen, played, rating: p.rating } : null,
   };
 }
 
-async function newRun(kind: "rush" | "battle", guest: string, name: string, minutes: number, puzzles: string[], start: number | null, race?: string) {
+async function newRun(kind: "rush" | "battle" | "storm", guest: string, name: string, minutes: number, puzzles: string[], start: number | null, race?: string) {
   const id = randomId(), key = randomId(18);
   await sql`insert into runs (id, key, kind, race_id, guest, name, minutes, puzzles, started_at, ends_at)
     values (${id}, ${key}, ${kind}, ${race ?? null}, ${guest}, ${name}, ${minutes}, ${JSON.stringify(puzzles)}, ${start}, ${start ? start + minutes * 60_000 : null})`;
@@ -85,6 +100,14 @@ export const raceRoutes: Record<string, Handler> = {
     if (!p) return fail("Your rating token is not valid.", 401);
     const minutes = Number(b.minutes) === 5 ? 5 : 3;
     const run = await newRun("rush", p.id, cleanName(b.name), minutes, pick(), Date.now());
+    return json({ ...run, run: runView((await sql`select * from runs where id = ${run.id}`)[0]) });
+  },
+
+  /** Starts a three-minute storm right away. */
+  "POST race/storm": async (_r, _u, b) => {
+    const p = await verified(b.token);
+    if (!p) return fail("Your rating token is not valid.", 401);
+    const run = await newRun("storm", p.id, cleanName(b.name), 3, pick(150), Date.now());
     return json({ ...run, run: runView((await sql`select * from runs where id = ${run.id}`)[0]) });
   },
 
@@ -140,7 +163,7 @@ export const raceRoutes: Record<string, Handler> = {
     const r = (await sql`select * from runs where id = ${String(b.id ?? "")} and key = ${String(b.key ?? "")}`)[0];
     if (!r) return fail("No such run.", 404);
     const now = Date.now();
-    const live = r.started_at && now >= Number(r.started_at) && now <= Number(r.ends_at) + GRACE && r.strikes < 3 && r.idx < r.puzzles.length;
+    const live = r.started_at && now >= Number(r.started_at) && now <= Number(r.ends_at) + GRACE && !out(r) && r.idx < r.puzzles.length;
     if (!live || Number(b.index) !== r.idx) return json({ result: "stale", run: runView(r) });
     const p = BY_ID.get(r.puzzles[r.idx]);
     if (!p) return json({ result: "stale", run: runView(r) });
@@ -151,20 +174,26 @@ export const raceRoutes: Record<string, Handler> = {
       reply = p.moves[r.step + 1];
       next = await sql`update runs set step = step + 2 where id = ${r.id} and idx = ${r.idx} and step = ${r.step} returning *`;
     } else if (outcome === "solved") {
-      next = await sql`update runs set score = score + 1, idx = idx + 1, step = 1 where id = ${r.id} and idx = ${r.idx} and step = ${r.step} returning *`;
+      const bonus = r.kind === "storm" ? stormBonus((r.combo ?? 0) + 1) : 0;
+      next = await sql`update runs set score = score + 1, idx = idx + 1, step = 1, combo = combo + 1, ends_at = ends_at + ${bonus}::bigint
+        where id = ${r.id} and idx = ${r.idx} and step = ${r.step} returning *`;
     } else {
-      next = await sql`update runs set strikes = strikes + 1, idx = idx + 1, step = 1 where id = ${r.id} and idx = ${r.idx} and step = ${r.step} returning *`;
+      const penalty = r.kind === "storm" ? STORM_PENALTY : 0;
+      next = await sql`update runs set strikes = strikes + 1, idx = idx + 1, step = 1, combo = 0, ends_at = ends_at - ${penalty}::bigint
+        where id = ${r.id} and idx = ${r.idx} and step = ${r.step} returning *`;
     }
     if (!next.length) return json({ result: "stale", run: runView((await sql`select * from runs where id = ${r.id}`)[0]) });
     return json({ result: outcome, reply, answer: outcome === "wrong" ? p.moves[r.step] : undefined, run: runView(next[0]) });
   },
 
-  /** Best checked rush per guest. */
+  /** Best checked rush per guest (or storm, with ?kind=storm). */
   "GET rush": async (_r, u) => {
-    const minutes = Number(u.searchParams.get("minutes")) === 5 ? 5 : 3;
+    const storm = u.searchParams.get("kind") === "storm";
+    const minutes = storm ? 3 : Number(u.searchParams.get("minutes")) === 5 ? 5 : 3;
+    const kind = storm ? "storm" : "rush";
     const rows = await sql`
       with best as (select distinct on (guest) guest, name, score, created_at from runs
-        where kind = 'rush' and minutes = ${minutes} and (ends_at < ${Date.now()} or strikes >= 3)
+        where kind = ${kind} and minutes = ${minutes} and (ends_at < ${Date.now()} or (kind <> 'storm' and strikes >= 3))
         order by guest, score desc, created_at)
       select * from best where score > 0 order by score desc, created_at limit 25`;
     return json({ scores: rows.map((r) => ({ guest: r.guest, name: r.name, score: r.score })) });

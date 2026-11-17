@@ -1,5 +1,5 @@
 import { canMate, replay, Result, variantOf } from "../lib/chess.js";
-import { cleanName, Color, daysOf, fail, Handler, json, other, Row, sql, timeOf, CORS } from "../lib/db.js";
+import { cleanName, Color, daysOf, fail, Handler, json, other, ping, Row, sql, timeOf, CORS } from "../lib/db.js";
 import {
   ABANDON_MS, blocked, clocks, createGame, current, finish, fresh, load, markSeen, movesOf, remember, seatOf, startMs, takeSeat,
   toMove, variantFields, verified, view,
@@ -12,6 +12,9 @@ import { ensureSchema } from "../lib/schema.js";
 import { findShared, pgnResponse, sharePage } from "../lib/share.js";
 import { socialRoutes } from "../lib/social.js";
 import { swissRoutes } from "../lib/swiss.js";
+import { teamRoutes } from "../lib/teams.js";
+import { extraRoutes } from "../lib/extras.js";
+import { banOf, modRoutes } from "../lib/mod.js";
 import { open, Profile, randomId, seal } from "../lib/token.js";
 
 /**
@@ -42,7 +45,8 @@ const core: Record<string, Handler> = {
     }
     await remember(p);
     const link = (await sql`select lichess from guests where id = ${p.id}`)[0];
-    return json({ profile: p, lichess: link?.lichess ?? null });
+    const ban = await banOf(p.id);
+    return json({ profile: p, lichess: link?.lichess ?? null, banned: ban ? { until: ban.until, reason: ban.reason } : null });
   },
 
   "POST games": async (_r, _u, b) => {
@@ -93,10 +97,11 @@ const core: Record<string, Handler> = {
     else if (g.ply >= 1) ms[seat] = c[seat] + (g[`${seat}_berserk`] ? 0 : g.increment * 1000);
     const rows = await sql`
       update games set moves = ${[...moves, uci].join(" ")}, ply = ply + 1, white_ms = ${ms.white}, black_ms = ${ms.black},
-        last_move_at = ${now}, draw_offer = case when draw_offer = ${seat} then draw_offer else null end, updated_at = now()
+        last_move_at = ${now}, draw_offer = case when draw_offer = ${seat} then draw_offer else null end, takeback_offer = null, updated_at = now()
       where id = ${g.id} and ply = ${g.ply} and status = 'playing' returning *`;
     if (!rows.length) return json(view((await load(g.id))!));
     g = rows[0];
+    await ping({ t: "game", id: g.id });
     if (r.ended) g = await finish(g, r.ended.result, r.ended.reason);
     return json(view(g));
   },
@@ -153,6 +158,27 @@ const core: Record<string, Handler> = {
       case "decline":
         if (g.draw_offer === other(seat)) g = (await sql`update games set draw_offer = null, updated_at = now() where id = ${g.id} returning *`)[0];
         break;
+      case "takeback": {
+        // Casual games only. Asking again after the opponent asked accepts their request.
+        if (g.status !== "playing" || g.rated || g.arena_id || g.swiss_id) return fail("Takebacks are for casual games.", 409);
+        if (g.takeback_offer === other(seat)) {
+          // Undo the asker's last move, and this player's reply to it if there was one.
+          const asker = other(seat);
+          const count = toMove(g) === asker ? 2 : 1;
+          if (g.ply < count) break;
+          const c = clocks(g);
+          const kept = movesOf(g).slice(0, g.ply - count);
+          g = (await sql`update games set moves = ${kept.join(" ")}, ply = ${kept.length}, rev = rev + 1, takeback_offer = null, draw_offer = null,
+              white_ms = ${Math.max(0, c.white)}, black_ms = ${Math.max(0, c.black)}, last_move_at = ${Date.now()}, updated_at = now()
+            where id = ${g.id} and ply = ${g.ply} and status = 'playing' returning *`)[0] ?? g;
+        } else if (g.ply >= (seat === "white" ? 1 : 2)) {
+          g = (await sql`update games set takeback_offer = ${seat}, updated_at = now() where id = ${g.id} returning *`)[0];
+        }
+        break;
+      }
+      case "takeback-decline":
+        if (g.takeback_offer === other(seat)) g = (await sql`update games set takeback_offer = null, updated_at = now() where id = ${g.id} returning *`)[0];
+        break;
       case "rematch": {
         if (g.status !== "finished" || g.arena_id || g.swiss_id) break;
         if (g.rematch_id) return json({ ...view(g), rematchSeat: await rematchSeat(g, seat, b) });
@@ -162,6 +188,7 @@ const core: Record<string, Handler> = {
         return json({ ...view((await load(g.id))!), rematchSeat: made });
       }
     }
+    await ping({ t: "game", id: g.id });
     return json(view((await load(g.id))!));
   },
 
@@ -262,7 +289,9 @@ const core: Record<string, Handler> = {
   /** Castle TV: the live game between the highest-rated players. */
   "GET tv": async (_r, u) => {
     const skip = u.searchParams.get("skip") ?? "";
+    const category = u.searchParams.get("category");
     const rows = await sql`select * from games where status = 'playing' and days is null and ply >= 2 and id <> ${skip}
+      and (${category}::text is null or category = ${category})
       and updated_at > now() - interval '3 minutes' order by coalesce(white_rating, 1500) + coalesce(black_rating, 1500) desc limit 1`;
     return rows.length ? json(view(rows[0])) : json({ none: true });
   },
@@ -290,7 +319,16 @@ async function rematchSeat(g: Row, seat: Color, b: any) {
   return takeSeat(next, p, cleanName(b.name));
 }
 
-const routes: Record<string, Handler> = { ...core, ...socialRoutes, ...arenaRoutes, ...swissRoutes, ...raceRoutes, ...legacyRoutes };
+const routes: Record<string, Handler> = {
+  ...core, ...socialRoutes, ...arenaRoutes, ...swissRoutes, ...raceRoutes, ...legacyRoutes, ...teamRoutes, ...extraRoutes, ...modRoutes,
+};
+
+/** Things a banned player can't do: start or join games, challenge, chat, enter tournaments or races. */
+const BANNED_FROM = new Set([
+  "POST games", "POST join", "POST challenge", "POST answer", "POST chat", "POST arena/join", "POST arena/pair", "POST arena/create",
+  "POST swiss/join", "POST swiss/pair", "POST swiss/create", "POST race/rush", "POST race/storm", "POST race/battle", "POST race/join",
+  "POST team/create", "POST team/join", "POST battle", "POST battle/join", "POST rush",
+]);
 
 async function handle(req: Request): Promise<Response> {
   const url = new URL(req.url);
@@ -302,6 +340,11 @@ async function handle(req: Request): Promise<Response> {
   if (req.method === "POST") body = await req.json().catch(() => ({}));
   try {
     await ensureSchema(sql);
+    if (BANNED_FROM.has(`${req.method} ${path}`) && body?.token) {
+      const who = open(body.token);
+      const ban = who && (await banOf(who.id));
+      if (ban) return fail(`Your Castle Online account is suspended until ${new Date(ban.until).toUTCString()}${ban.reason ? `: ${ban.reason}` : "."}`, 403, "banned");
+    }
     return await route(req, url, body ?? {});
   } catch (e) {
     console.error(e);

@@ -2,6 +2,7 @@ mod db;
 mod engine;
 mod fics;
 mod misc;
+mod tray;
 mod updates;
 
 use tauri::Manager;
@@ -24,6 +25,7 @@ pub fn run() {
         .manage(engine::Engines::default())
         .manage(fics::Fics::default())
         .manage(updates::Pending::default())
+        .manage(updates::Background::default())
         .setup(|app| {
             let dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&dir)?;
@@ -32,10 +34,16 @@ pub fn run() {
             misc::install_bundled_engines(app.handle());
             Ok(())
         })
-        .on_window_event(|window, event| {
-            if let tauri::WindowEvent::Destroyed = event {
-                window.state::<engine::Engines>().kill_all();
+        .on_window_event(|window, event| match event {
+            // In background mode, closing the window hides it; Castle stays in the menu bar or tray.
+            tauri::WindowEvent::CloseRequested { api, .. } => {
+                if window.state::<updates::Background>().0.load(std::sync::atomic::Ordering::Relaxed) {
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
             }
+            tauri::WindowEvent::Destroyed => window.state::<engine::Engines>().kill_all(),
+            _ => {}
         })
         .invoke_handler(tauri::generate_handler![
             engine::engine_start,
@@ -81,8 +89,18 @@ pub fn run() {
             misc::legacy_library,
             misc::legacy_data,
             updates::update_check,
+            updates::update_download,
             updates::update_install,
+            updates::app_location,
+            updates::set_background,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running Castle");
+        .build(tauri::generate_context!())
+        .expect("error while building Castle")
+        .run(|_app, _event| {
+            // Clicking the Dock icon brings back a window hidden by background mode.
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Reopen { .. } = _event {
+                tray::show(_app);
+            }
+        });
 }

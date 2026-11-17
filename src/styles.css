@@ -235,3 +235,4 @@ kbd { font-family: ui-monospace, Menlo, monospace; }
 .react-button:hover { background: var(--bg-raised); transform: scale(1.15); }
 .react-button:active { transform: scale(.95); }
 .challenge-stack { position: fixed; right: 16px; bottom: 40px; z-index: 300; display: grid; gap: 8px; width: 320px; }
+.mini-tv { position: fixed; right: 16px; bottom: 40px; z-index: 250; width: 228px; background: var(--bg-panel); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 10px 30px #0007; padding: 0 4px 4px; }

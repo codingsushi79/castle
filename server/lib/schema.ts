@@ -113,6 +113,22 @@ const STEPS: string[][] = [
        created_at timestamptz not null default now())`,
     `create index if not exists runs_rush on runs (kind, minutes, score desc)`,
   ],
+  // 4: Castle 2.3.1 beta 2: takebacks, notes, teams and team battles, storm, bans, accuracy reports
+  [
+    `alter table games add column if not exists rev integer not null default 0`,
+    `alter table games add column if not exists takeback_offer text`,
+    `create table if not exists notes (game_id text not null, guest text not null, text text not null, updated_at timestamptz not null default now(), primary key (game_id, guest))`,
+    `create table if not exists teams (id text primary key, code text unique not null, name text not null, created_by text not null, created_at timestamptz not null default now())`,
+    `create table if not exists team_members (team_id text not null, guest text not null, name text not null, joined_at timestamptz not null default now(), primary key (guest))`,
+    `create index if not exists team_members_team on team_members (team_id)`,
+    `alter table arenas add column if not exists team_leaders integer`,
+    `create table if not exists arena_teams (arena_id text not null, team_id text not null, primary key (arena_id, team_id))`,
+    `alter table arena_players add column if not exists team_id text`,
+    `alter table runs add column if not exists combo integer not null default 0`,
+    `alter table guests add column if not exists banned_until timestamptz`,
+    `alter table guests add column if not exists ban_reason text`,
+    `create table if not exists accuracy (game_id text not null, reporter text not null, white real, black real, created_at timestamptz not null default now(), primary key (game_id, reporter))`,
+  ],
 ];
 
 let ready: Promise<void> | undefined;

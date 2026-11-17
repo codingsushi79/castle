@@ -13,7 +13,9 @@ import { Sound } from "./sound";
  * the answer). Scores therefore come from the server, never from the app.
  */
 export interface RunView {
-  id: string; kind: "rush" | "battle"; status: "waiting" | "countdown" | "running" | "finished";
+  id: string; kind: "rush" | "battle" | "storm"; status: "waiting" | "countdown" | "running" | "finished";
+  /** Storm: solves in a row (time bonuses at 5, 12, 20, 30). */
+  combo?: number;
   score: number; strikes: number; index: number; startedAt: number | null; endsAt: number | null; now: number;
   puzzle: { id: string; fen: string; played: string[]; rating: number } | null;
 }
@@ -24,7 +26,7 @@ export interface RaceView {
 }
 
 interface State {
-  kind?: "rush" | "battle";
+  kind?: "rush" | "battle" | "storm";
   run?: RunView;
   key?: string;
   race?: RaceView;
@@ -41,6 +43,8 @@ interface State {
   answer?: [string, string];
   error?: string;
   startRush: (minutes: number) => Promise<void>;
+  /** Storm: three minutes, misses cost ten seconds, solves in a row earn time. */
+  startStorm: () => Promise<void>;
   createBattle: (minutes: number, isPublic: boolean) => Promise<void>;
   joinBattle: (code: string) => Promise<void>;
   leave: () => void;
@@ -94,7 +98,7 @@ export const useRace = create<State>((set, get) => {
 
   const running = () => {
     const r = get().run;
-    if (!r || r.status !== "running" || r.strikes >= 3) return false;
+    if (!r || r.status !== "running" || (r.kind !== "storm" && r.strikes >= 3)) return false;
     return !r.endsAt || Date.now() + get().offset < r.endsAt;
   };
 
@@ -146,6 +150,14 @@ export const useRace = create<State>((set, get) => {
       reset();
       const r = await api<{ id: string; key: string; run: RunView }>("race/rush", { token: onlineToken(), name: useOnline.getState().name, minutes });
       set({ kind: "rush", key: r.key });
+      show(r.run);
+      watch();
+    },
+    startStorm: async () => {
+      await ensureOnline();
+      reset();
+      const r = await api<{ id: string; key: string; run: RunView }>("race/storm", { token: onlineToken(), name: useOnline.getState().name });
+      set({ kind: "storm", key: r.key });
       show(r.run);
       watch();
     },

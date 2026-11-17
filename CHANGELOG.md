@@ -1,5 +1,37 @@
 # Castle changelog
 
+## 2.3.1-2
+
+The second beta of Castle 2.3.1.
+
+### Updating
+- **Updates download in the background** and install when you click **Restart to update** (in the status bar or Settings), so restarting is quick. Castle also checks every few hours while it's open.
+- **One Castle in the Dock:** after an update, Castle now restarts through macOS properly instead of leaving a second icon behind.
+- **No more keychain prompts after updates:** your Lichess sign-in and saved FICS password are now kept in a way that survives updates. macOS may ask one last time.
+- **What's in an update** is shown before you install it.
+- If macOS is running Castle from a temporary copy (because it wasn't moved out of Downloads or the disk image), Castle says so: drag it to Applications to let it update.
+
+### Play online
+- **Takebacks** in casual games: ask, and your opponent can allow or refuse.
+- **Notes** on any game you play: plans and ideas, saved as you type, visible only to you.
+- **Teams and team battles:** make or join a team with a code, see who's online, and take on other teams in a team-battle arena where each team's best players' points count.
+- **Castle TV channels:** bullet, blitz, rapid, classical and each variant, and TV keeps playing in a small window while you use the rest of Castle.
+- **Keep Castle in the menu bar** (Settings → Updates) so move alerts and challenges arrive even with the window closed.
+
+### Learning
+- **What you should have played:** after the review, step through your mistakes on the board, with the better move in green and yours in red.
+- **Your stats:** rating graphs for each category, how you score with White and Black, how your games end, and your most-played openings (Play → Online → Stats).
+
+### Puzzles
+- **Puzzle storm:** three minutes on one clock; misses cost ten seconds, runs of solves earn time. Checked by the server, with its own leaderboard.
+
+### Fairness and safety
+- Names like "Knights" were wrongly turned into "Guest" by the word filter; that's fixed.
+- A moderation page lets the server's administrator see reports, spot players whose opponents' reviews show engine-like accuracy, and suspend accounts. Suspended players are told why and until when.
+
+### Faster live updates
+- Changes are now announced by the database itself, so moves and chat reach everyone even sooner, with less load on the server.
+
 ## 2.3.1-1
 
 The first beta of Castle 2.3.1: more ways to play online, and a safer, faster Castle Online.

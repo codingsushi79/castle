@@ -38,14 +38,44 @@ pub fn app_dir(app: AppHandle, sub: String) -> Result<String, String> {
     Ok(dir.to_string_lossy().to_string())
 }
 
-/// Reads a secret from the login keychain. Runs off the main thread, because macOS
-/// may ask the user for permission and that must not freeze the window. Development
-/// builds skip the keychain so that rebuilding never triggers that prompt.
+/*
+ * Secrets (the Lichess token, a saved FICS password) live in the system keychain.
+ *
+ * macOS ties a keychain item to the code signature of the app that created it.
+ * Castle's release builds are signed ad hoc, so every update has a new
+ * signature and macOS asked for permission again after each one. So on macOS
+ * secrets are kept through Apple's own `security` tool, whose signature never
+ * changes, under a new service name. An item from an older Castle is read once
+ * more (macOS may ask one last time) and copied over.
+ */
+#[cfg(target_os = "macos")]
+const SECRET_SERVICE: &str = "app.castle.Castle.secrets";
+
+#[cfg(target_os = "macos")]
+fn security(args: &[&str]) -> Option<String> {
+    let out = std::process::Command::new("/usr/bin/security").args(args).output().ok()?;
+    out.status.success().then(|| String::from_utf8_lossy(&out.stdout).trim_end_matches('\n').to_string())
+}
+
+/// Reads a secret. Runs off the main thread, because macOS may ask the user for
+/// permission (once, when migrating) and that must not freeze the window.
+/// Development builds skip the keychain so that rebuilding never triggers a prompt.
 #[tauri::command(async)]
 pub fn secret_get(key: String) -> Option<String> {
     if cfg!(debug_assertions) {
         return None;
     }
+    #[cfg(target_os = "macos")]
+    {
+        if let Some(v) = security(&["find-generic-password", "-s", SECRET_SERVICE, "-a", &key, "-w"]) {
+            return Some(v);
+        }
+        // Copy a secret saved by an older Castle into the new place, once.
+        let old = keyring::Entry::new("app.castle.Castle", &key).ok()?.get_password().ok()?;
+        let _ = security(&["add-generic-password", "-U", "-s", SECRET_SERVICE, "-a", &key, "-w", &old]);
+        return Some(old);
+    }
+    #[allow(unreachable_code)]
     keyring::Entry::new("app.castle.Castle", &key).ok()?.get_password().ok()
 }
 
@@ -54,12 +84,31 @@ pub fn secret_set(key: String, value: Option<String>) -> Result<(), String> {
     if cfg!(debug_assertions) {
         return Ok(());
     }
-    let entry = keyring::Entry::new("app.castle.Castle", &key).map_err(|e| e.to_string())?;
-    match value {
-        Some(v) if !v.is_empty() => entry.set_password(&v).map_err(|e| e.to_string()),
-        _ => {
-            let _ = entry.delete_credential();
-            Ok(())
+    #[cfg(target_os = "macos")]
+    {
+        return match value {
+            Some(v) if !v.is_empty() => security(&["add-generic-password", "-U", "-s", SECRET_SERVICE, "-a", &key, "-w", &v])
+                .map(|_| ())
+                .ok_or_else(|| "Could not save to the keychain.".to_string()),
+            _ => {
+                let _ = security(&["delete-generic-password", "-s", SECRET_SERVICE, "-a", &key]);
+                // Forget an older Castle's copy too, if macOS lets us.
+                if let Ok(e) = keyring::Entry::new("app.castle.Castle", &key) {
+                    let _ = e.delete_credential();
+                }
+                Ok(())
+            }
+        };
+    }
+    #[allow(unreachable_code)]
+    {
+        let entry = keyring::Entry::new("app.castle.Castle", &key).map_err(|e| e.to_string())?;
+        match value {
+            Some(v) if !v.is_empty() => entry.set_password(&v).map_err(|e| e.to_string()),
+            _ => {
+                let _ = entry.delete_credential();
+                Ok(())
+            }
         }
     }
 }

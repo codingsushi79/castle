@@ -3,6 +3,7 @@ import { Color, cleanName, fail, Handler, json, Row, sql, timeOf } from "./db.js
 import { current, onFinish, pairedGame, verified } from "./game.js";
 import { categoryOf, ratingIn } from "./ratings.js";
 import { randomId } from "./token.js";
+import { teamIdOf } from "./teams.js";
 
 /**
  * Arenas: play as many games as you can before the end. The server pairs
@@ -16,7 +17,21 @@ function arenaInfo(a: Row, now: number) {
   return {
     id: a.id, name: a.name, minutes: a.minutes, increment: a.increment, variant: variantOf(a.variant),
     startsAt: starts, endsAt: ends, status: now < starts ? "upcoming" : now < ends ? "running" : "finished",
+    /** Team battles: how many of each team's best players count. */
+    teamLeaders: a.team_leaders ?? null,
   };
+}
+
+/** A team battle's table: each team scores the points of its best `leaders` players. */
+async function teamStandings(a: Row) {
+  if (!a.team_leaders) return null;
+  const teams = await sql`select t.id, t.name from arena_teams x join teams t on t.id = x.team_id where x.arena_id = ${a.id}`;
+  const players = await sql`select team_id, name, score from arena_players where arena_id = ${a.id} and team_id is not null order by score desc`;
+  return teams.map((t) => {
+    const mine = players.filter((p) => p.team_id === t.id);
+    const top = mine.slice(0, a.team_leaders);
+    return { id: t.id, name: t.name, score: top.reduce((s, p) => s + p.score, 0), players: mine.length, leaders: top.map((p) => p.name) };
+  }).sort((x, y) => y.score - x.score);
 }
 
 let arenasMadeFor = 0;
@@ -61,19 +76,19 @@ export const arenaRoutes: Record<string, Handler> = {
         (array_agg(name order by score desc, games))[1] as leader, max(score) as top
       from arena_players where arena_id = any(${ids}) group by arena_id` : [];
     const by = new Map(stats.map((s) => [s.arena_id, s]));
-    return json({ now, arenas: rows.map((a) => ({ ...arenaInfo(a, now), players: by.get(a.id)?.players ?? 0, leader: by.get(a.id)?.leader ?? null, top: by.get(a.id)?.top ?? 0 })) });
+    return json({ now, arenas: rows.filter((a) => !a.team_leaders || a.ends_at > now).map((a) => ({ ...arenaInfo(a, now), players: by.get(a.id)?.players ?? 0, leader: by.get(a.id)?.leader ?? null, top: by.get(a.id)?.top ?? 0 })) });
   },
 
   "GET arena": async (_r, u) => {
     const a = (await sql`select * from arenas where id = ${u.searchParams.get("id") ?? ""}`)[0];
     if (!a) return fail("No such arena.", 404);
     const now = Date.now();
-    const players = await sql`select guest, name, rating, score, streak, games, waiting_since, seat_game, last_poll from arena_players where arena_id = ${a.id} order by score desc, games limit 100`;
+    const players = await sql`select guest, name, rating, score, streak, games, waiting_since, seat_game, last_poll, team_id from arena_players where arena_id = ${a.id} order by score desc, games limit 100`;
     return json({
-      now, arena: arenaInfo(a, now),
+      now, arena: arenaInfo(a, now), teams: await teamStandings(a),
       players: players.map((r) => ({
         guest: r.guest, name: r.name, rating: r.rating, score: r.score, streak: r.streak, games: r.games,
-        playing: !!r.seat_game, active: !!r.last_poll && Number(r.last_poll) > now - 15_000,
+        playing: !!r.seat_game, active: !!r.last_poll && Number(r.last_poll) > now - 15_000, team: r.team_id ?? null,
       })),
     });
   },
@@ -86,8 +101,14 @@ export const arenaRoutes: Record<string, Handler> = {
     const startsIn = Math.min(120, Math.max(0, Math.round(Number(b.startsIn) || 0)));
     const duration = Math.min(180, Math.max(10, Math.round(Number(b.duration) || 30)));
     const id = randomId(), start = Date.now() + startsIn * 60_000;
-    await sql`insert into arenas (id, name, minutes, increment, variant, starts_at, ends_at, created_by)
-      values (${id}, ${cleanName(title) === "Guest" ? `${cleanName(b.name)}'s arena` : title}, ${minutes}, ${increment}, ${variantOf(b.variant)}, ${start}, ${start + duration * 60_000}, ${p.id})`;
+    // A team battle names two to ten teams by their codes.
+    const codes = (Array.isArray(b.teams) ? b.teams : []).map((c: unknown) => String(c).toUpperCase().trim()).filter(Boolean).slice(0, 10);
+    const teams = codes.length ? await sql`select id from teams where code = any(${codes})` : [];
+    if (codes.length && teams.length < 2) return fail("A team battle needs at least two teams (check the codes).");
+    const leaders = teams.length ? Math.min(10, Math.max(1, Math.round(Number(b.leaders) || 5))) : null;
+    await sql`insert into arenas (id, name, minutes, increment, variant, starts_at, ends_at, created_by, team_leaders)
+      values (${id}, ${cleanName(title) === "Guest" ? `${cleanName(b.name)}'s arena` : title}, ${minutes}, ${increment}, ${variantOf(b.variant)}, ${start}, ${start + duration * 60_000}, ${p.id}, ${leaders})`;
+    for (const t of teams) await sql`insert into arena_teams (arena_id, team_id) values (${id}, ${t.id})`;
     return json({ id });
   },
 
@@ -98,8 +119,14 @@ export const arenaRoutes: Record<string, Handler> = {
     const now = Date.now();
     if (!a || a.ends_at <= now) return fail("That arena is over.", 409);
     const rating = ratingIn(p, categoryOf(variantOf(a.variant), a.minutes, a.increment));
-    await sql`insert into arena_players (arena_id, guest, name, rating, waiting_since, last_poll)
-      values (${a.id}, ${p.id}, ${cleanName(b.name)}, ${rating}, ${now}, ${now})
+    let team: string | null = null;
+    if (a.team_leaders) {
+      team = (await teamIdOf(p.id)) ?? null;
+      const allowed = team && (await sql`select 1 from arena_teams where arena_id = ${a.id} and team_id = ${team}`).length;
+      if (!allowed) return fail("Only members of the teams in this battle can join it.", 403);
+    }
+    await sql`insert into arena_players (arena_id, guest, name, rating, waiting_since, last_poll, team_id)
+      values (${a.id}, ${p.id}, ${cleanName(b.name)}, ${rating}, ${now}, ${now}, ${team})
       on conflict (arena_id, guest) do update set name = excluded.name, rating = excluded.rating, last_poll = excluded.last_poll, paused = false,
         waiting_since = case when arena_players.seat_game is null then coalesce(arena_players.waiting_since, excluded.waiting_since) else arena_players.waiting_since end`;
     return json({ ok: true });
@@ -139,7 +166,8 @@ export const arenaRoutes: Record<string, Handler> = {
     const blocks = await sql`select blocked as g from blocks where guest = ${p.id} union select guest from blocks where blocked = ${p.id}`;
     const avoid = new Set(blocks.map((r) => r.g));
     const others = (await sql`select * from arena_players where arena_id = ${a.id} and guest <> ${p.id}
-      and waiting_since is not null and seat_game is null and last_poll > ${now - 8000} order by waiting_since limit 30`).filter((o) => !avoid.has(o.guest));
+      and waiting_since is not null and seat_game is null and last_poll > ${now - 8000} order by waiting_since limit 30`)
+      .filter((o) => !avoid.has(o.guest) && !(a.team_leaders && o.team_id === me.team_id)); // team battles pair across teams
     if (!others.length) return json({ status: "waiting" });
     // Avoid an immediate rematch when there is a choice, then pair by rating.
     const rank = (o: Row) => (o.last_opponent === p.id || me.last_opponent === o.guest ? 10_000 : 0) + Math.abs((o.rating ?? 1500) - (me.rating ?? 1500));

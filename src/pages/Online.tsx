@@ -1,17 +1,18 @@
-import { ActionIcon, Alert, Badge, Button, Collapse, Group, Loader, Menu, Modal, NumberInput, Progress, SegmentedControl, Select, Switch, Text, TextInput, Tooltip } from "@mantine/core";
+import { ActionIcon, Alert, Badge, Button, Collapse, Group, Loader, Menu, Modal, NumberInput, Progress, SegmentedControl, Select, Switch, Text, Textarea, TextInput, Tooltip } from "@mantine/core";
 import {
-  IconBan, IconBolt, IconBroadcast, IconCheck, IconCopy, IconDeviceTv, IconDots, IconEye, IconFileDownload, IconFlag, IconFlame, IconGif, IconHandStop,
+  IconArrowBackUp, IconBan, IconBolt, IconChartLine, IconNotes, IconShield, IconBroadcast, IconCheck, IconCopy, IconDeviceTv, IconDots, IconEye, IconFileDownload, IconFlag, IconFlame, IconGif, IconHandStop,
   IconLink, IconMailbox, IconPlayerSkipForward, IconPlugConnected, IconPlus, IconPuzzle, IconRefresh, IconSearch, IconSend, IconShare2, IconSwords,
   IconTrophy, IconUserPlus, IconUsers, IconWifiOff, IconX,
 } from "@tabler/icons-react";
 import { ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { Board } from "../components/Board";
 import { EvalBar, MoveList, Panel, PlayerStrip } from "../components/common";
-import { Color, GameTree, positionOf, uciOf } from "../lib/chess";
+import { OnlineStats } from "../components/OnlineStats";
+import { Color, GameTree, GNode, positionOf, sanLine, scoreText, Shape, uciOf } from "../lib/chess";
 import { entryOf, launch, resolveEngine } from "../lib/engines";
 import {
   ABANDON_MS, ARENA_BREAK_MS, ArenaInfo, CATEGORY_LABELS, categoryOf, Challenge, Correspondence, GameView, gamesFor, ONLINE_VARIANTS, OnlineVariant,
-  ratingFor, ratingWindow, REACTIONS, RoomLine, rulesOfVariant, shownClocks, SwissInfo, tc, useOnline, variantLabel,
+  ratingFor, ratingWindow, REACTIONS, RoomLine, rulesOfVariant, shownClocks, SwissInfo, tc, TV_CHANNELS, useOnline, variantLabel,
 } from "../lib/online";
 import { usePlay } from "../lib/play";
 import { usePuzzles } from "../lib/puzzles";
@@ -19,7 +20,7 @@ import { useRace } from "../lib/race";
 import { checkPrep, PrepCheck, useRepertoire } from "../lib/repertoire";
 import { mistakePuzzles, reviewGame, ReviewSummary, summarise } from "../lib/review";
 import { copyPgn, copyShareLink, saveGif, savePgn } from "../lib/share";
-import { load, save } from "../lib/storage";
+import { copyText, load, save } from "../lib/storage";
 import { useApp, useTree } from "../lib/store";
 import type { Engine } from "../lib/uci";
 import { useSpectatorEngine } from "./Watch";
@@ -156,6 +157,7 @@ export function OnlinePanels() {
   const [tourTab, setTourTab] = useState<string>(load("onlineTourTab", "arena"));
   const [making, setMaking] = useState(false);
   const [ratingOpen, setRatingOpen] = useState(false);
+  const [statsOpen, setStatsOpen] = useState(false);
 
   useEffect(() => { if (!o.ready) o.start(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
@@ -203,11 +205,21 @@ export function OnlinePanels() {
           </Alert>
         </div>
       )}
+      {o.banned && (
+        <div style={{ padding: "10px 12px 0" }}>
+          <Alert color="red" p="xs" icon={<IconShield size={16} />} title="Your Castle Online account is suspended">
+            <Text size="sm">Until {new Date(o.banned.until).toLocaleString()}{o.banned.reason ? `: ${o.banned.reason}` : "."} You can finish games already started.</Text>
+          </Alert>
+        </div>
+      )}
       {o.incoming.length > 0 && <div style={{ padding: "10px 12px 0", display: "grid", gap: 6 }}>{o.incoming.map((c) => <ChallengeCard key={c.id} c={c} />)}</div>}
       {o.arena && <ArenaPanel />}
       {o.swiss && <SwissPanel />}
 
-      <Panel title="You" right={p && <Button size="compact-xs" variant="subtle" onClick={() => setRatingOpen(true)}>Ratings &amp; transfer</Button>}>
+      <Panel title="You" right={p && <Group gap={2}>
+        <Button size="compact-xs" variant="subtle" leftSection={<IconChartLine size={12} />} onClick={() => setStatsOpen(true)}>Stats</Button>
+        <Button size="compact-xs" variant="subtle" onClick={() => setRatingOpen(true)}>Ratings &amp; transfer</Button>
+      </Group>}>
         <Group gap="md" wrap="nowrap" align="flex-end">
           <TextInput style={{ flex: 1 }} size="xs" label="Name shown to opponents" value={o.name} maxLength={24} onChange={(e) => o.setName(e.currentTarget.value)} />
           {p ? (
@@ -221,6 +233,7 @@ export function OnlinePanels() {
         </Group>
       </Panel>
       <RatingModal opened={ratingOpen} onClose={() => setRatingOpen(false)} />
+      <OnlineStats opened={statsOpen} onClose={() => setStatsOpen(false)} />
 
       {mine.length > 0 && (
         <Panel title={<><IconMailbox size={13} /> Correspondence {myTurn > 0 && <Badge size="xs" ml={4}>{myTurn} to move</Badge>}</>} pad={false}>
@@ -290,6 +303,8 @@ export function OnlinePanels() {
         )) : <Text size="xs" c="dimmed">Add opponents as friends from a game or the leaderboard, then challenge them here with the settings above.</Text>}
       </Panel>
 
+      <TeamPanel />
+
       {!o.arena && !o.swiss && (
         <Panel title={<><IconTrophy size={13} /> Tournaments</>} pad={false}
           right={<Tooltip label={`Make ${tourTab === "arena" ? "an arena" : "a Swiss"}`}><ActionIcon size="sm" variant="subtle" color="gray" onClick={() => setMaking(!making)}><IconPlus size={14} /></ActionIcon></Tooltip>}>
@@ -316,7 +331,7 @@ export function OnlinePanels() {
 
       <Panel title={<><IconBroadcast size={13} /> Lobby</>} pad={false}
         right={<Group gap={4}>
-          <Tooltip label="Castle TV: the top live game"><ActionIcon size="sm" variant="subtle" color="gray" onClick={() => o.watchTV()}><IconDeviceTv size={14} /></ActionIcon></Tooltip>
+          <Tooltip label="Castle TV: the top live game"><ActionIcon size="sm" variant="subtle" color="gray" onClick={() => o.watchTV(o.tvChannel)}><IconDeviceTv size={14} /></ActionIcon></Tooltip>
           <Tooltip label="Refresh"><ActionIcon size="sm" variant="subtle" color="gray" onClick={() => o.refreshLobby()}><IconRefresh size={13} /></ActionIcon></Tooltip>
         </Group>}>
         <div style={{ padding: "8px 12px" }}>
@@ -403,7 +418,7 @@ function ArenaRow({ a }: { a: ArenaInfo }) {
       <div style={{ flex: 1, minWidth: 0 }}>
         <Text size="sm" fw={600} truncate>{a.name}</Text>
         <Text size="xs" c="dimmed">
-          {tc(a.minutes, a.increment)}{a.variant !== "chess" ? ` · ${variantLabel(a.variant)}` : ""} · {a.status === "running" ? `ends in ${minutesLeft(a.endsAt - now)}` : `starts in ${minutesLeft(a.startsAt - now)}`} · {a.players ?? 0} playing{a.leader ? ` · ${a.leader} leads` : ""}
+          {a.teamLeaders ? "Team battle · " : ""}{tc(a.minutes, a.increment)}{a.variant !== "chess" ? ` · ${variantLabel(a.variant)}` : ""} · {a.status === "running" ? `ends in ${minutesLeft(a.endsAt - now)}` : `starts in ${minutesLeft(a.startsAt - now)}`} · {a.players ?? 0} playing{a.leader ? ` · ${a.leader} leads` : ""}
         </Text>
       </div>
       {a.status === "running" && <Badge size="xs" color="green" variant="light">Live</Badge>}
@@ -432,8 +447,63 @@ function SwissRow({ s }: { s: SwissInfo }) {
   );
 }
 
+/** Your team: its code to share, who's online, and joining or making one. */
+function TeamPanel() {
+  const o = useOnline();
+  const [name, setName] = useState("");
+  const [code, setCode] = useState("");
+  const [busy, setBusy] = useState<string>();
+  const run = async (what: string, f: () => Promise<void>) => {
+    setBusy(what);
+    try { await f(); } catch (e: any) { useOnline.setState({ error: e.message }); } finally { setBusy(undefined); }
+  };
+  if (!o.ready) return null;
+  const t = o.team;
+  return (
+    <Panel title={<><IconUsers size={13} /> Team</>}>
+      {t ? (
+        <>
+          <Group justify="space-between" wrap="nowrap">
+            <div style={{ minWidth: 0 }}>
+              <Text fw={700} truncate>{t.name}</Text>
+              <Text size="xs" c="dimmed">Join code <b style={{ letterSpacing: 1 }}>{t.code}</b> · {t.members.length} member{t.members.length === 1 ? "" : "s"}</Text>
+            </div>
+            <Group gap={4} wrap="nowrap">
+              <Tooltip label="Copy the join code"><ActionIcon size="sm" variant="subtle" color="gray" onClick={() => copyText(t.code)}><IconCopy size={13} /></ActionIcon></Tooltip>
+              <Button size="compact-xs" variant="subtle" color="red" loading={busy === "leave"} onClick={() => run("leave", o.leaveTeam)}>Leave</Button>
+            </Group>
+          </Group>
+          <div style={{ marginTop: 6, maxHeight: 120, overflowY: "auto" }}>
+            {t.members.map((m) => (
+              <Group key={m.guest} gap={8} py={1} wrap="nowrap">
+                <span className={"presence" + (m.online ? " on" : "")} />
+                <Text size="sm" truncate fw={m.guest === o.profile?.id ? 700 : 400}>{m.name}{m.guest === o.profile?.id ? " (you)" : ""}</Text>
+              </Group>
+            ))}
+          </div>
+          <Text size="xs" c="dimmed" mt={4}>Take on other teams in a team battle: make an arena under Tournaments and add the teams' codes.</Text>
+        </>
+      ) : (
+        <>
+          <Group gap={6} wrap="nowrap">
+            <TextInput style={{ flex: 1 }} size="xs" placeholder="Join with a team code" value={code} onChange={(e) => setCode(e.currentTarget.value.toUpperCase())} />
+            <Button size="xs" variant="default" disabled={code.length < 6} loading={busy === "join"} onClick={() => run("join", () => o.joinTeam(code))}>Join</Button>
+          </Group>
+          <Group gap={6} wrap="nowrap" mt={6}>
+            <TextInput style={{ flex: 1 }} size="xs" placeholder="Or name a new team" maxLength={32} value={name} onChange={(e) => setName(e.currentTarget.value)} />
+            <Button size="xs" variant="light" disabled={!name.trim()} loading={busy === "create"} onClick={() => run("create", () => o.createTeam(name))}>Create</Button>
+          </Group>
+        </>
+      )}
+    </Panel>
+  );
+}
+
 function NewArena({ onDone }: { onDone: () => void }) {
   const o = useOnline();
+  const [battle, setBattle] = useState(false);
+  const [codes, setCodes] = useState(o.team?.code ?? "");
+  const [leaders, setLeaders] = useState<number>(5);
   const [title, setTitle] = useState("");
   const [preset, setPreset] = useState(1);
   const [variant, setVariant] = useState<OnlineVariant>("chess");
@@ -451,10 +521,18 @@ function NewArena({ onDone }: { onDone: () => void }) {
         <NumberInput size="xs" label="Starts in (min)" min={0} max={120} value={startsIn} onChange={(v) => setStartsIn(Number(v) || 0)} />
         <NumberInput size="xs" label="Lasts (min)" min={10} max={180} value={duration} onChange={(v) => setDuration(Number(v) || 30)} />
       </Group>
+      <Switch mt={8} size="xs" label="Team battle" checked={battle} onChange={(e) => setBattle(e.currentTarget.checked)} />
+      {battle && (
+        <Group grow mt={6} align="flex-end">
+          <TextInput size="xs" label="Team codes, separated by commas" placeholder="ABC234, XYZ789" value={codes} onChange={(e) => setCodes(e.currentTarget.value.toUpperCase())} />
+          <NumberInput size="xs" label="Best players who count" min={1} max={10} value={leaders} onChange={(v) => setLeaders(Number(v) || 5)} />
+        </Group>
+      )}
       <Button mt={8} size="xs" fullWidth loading={busy} onClick={async () => {
         setBusy(true);
         try {
-          await o.createArena({ title, minutes: PRESETS[preset][0], increment: PRESETS[preset][1], variant, startsIn, duration });
+          const teams = battle ? codes.split(/[\s,]+/).filter(Boolean) : undefined;
+          await o.createArena({ title, minutes: PRESETS[preset][0], increment: PRESETS[preset][1], variant, startsIn, duration, teams, leaders: battle ? leaders : undefined });
           onDone();
         } catch (e: any) { useOnline.setState({ error: e.message }); } finally { setBusy(false); }
       }}>Create and join</Button>
@@ -521,7 +599,20 @@ function ArenaPanel() {
     : a.paused ? "Paused: you won't be paired" : a.status === "seated" ? "In a game" : "Waiting for a pairing…";
   return (
     <Panel title={<><IconTrophy size={13} /> {a.info.name}</>} right={<Text size="xs" c="dimmed">{!over && now >= a.info.startsAt ? `${clock(a.info.endsAt - now)} left` : ""}</Text>}>
-      {over && a.players.length > 0 && <Podium names={a.players.slice(0, 3).map((p) => p.name)} />}
+      {over && (a.teams?.length ? <Podium names={a.teams.slice(0, 3).map((t) => t.name)} /> : a.players.length > 0 && <Podium names={a.players.slice(0, 3).map((p) => p.name)} />)}
+      {a.teams && a.teams.length > 0 && (
+        <div style={{ marginBottom: 8, padding: 8, borderRadius: 6, background: "var(--bg-raised)" }}>
+          <Text size="xs" fw={700} mb={2}>Team battle · best {a.info.teamLeaders} of each team count</Text>
+          {a.teams.map((t, i) => (
+            <Group key={t.id} gap={8} wrap="nowrap" py={1} style={{ fontWeight: o.team?.id === t.id ? 800 : undefined }}>
+              <Text size="xs" w={16} c="dimmed">{i + 1}</Text>
+              <Text size="sm" style={{ flex: 1 }} truncate>{t.name}</Text>
+              <Text size="xs" c="dimmed">{t.players} playing</Text>
+              <Text size="sm" fw={700} w={30} ta="right">{t.score}</Text>
+            </Group>
+          ))}
+        </div>
+      )}
       <Group justify="space-between" wrap="nowrap">
         <div>
           <Group gap={6}>{!a.paused && now >= a.info.startsAt && !over && a.status !== "seated" && <Loader size="xs" />}<Text fw={700} size="sm">{status}</Text></Group>
@@ -630,6 +721,7 @@ function useAutoReview(g: GameView, mine: Color | undefined) {
       if (!done || cancelled) return;
       const summary = summarise(tree);
       const added = standard ? usePuzzles.getState().addMistakes(mistakePuzzles(tree, mine)) : 0;
+      if (standard && summary) o.reportAccuracy(g.id, summary.accuracy.white, summary.accuracy.black);
       setState({ progress: 100, summary, tree, added, prep });
     })().catch((e) => !cancelled && setState({ progress: 0, error: e.message, prep }));
     return () => { cancelled = true; engine?.quit(); };
@@ -659,6 +751,41 @@ function PrepNote({ prep, color }: { prep: PrepCheck; color: Color }) {
   );
 }
 
+/** Private notes on a game, saved on the server as you type (only your seat can read them). */
+function Notes({ gameId }: { gameId: string }) {
+  const o = useOnline();
+  const [text, setText] = useState<string>();
+  const [saved, setSaved] = useState(true);
+  const timer = useRef<ReturnType<typeof setTimeout>>();
+  useEffect(() => { setText(undefined); o.loadNotes().then(setText); }, [gameId]); // eslint-disable-line react-hooks/exhaustive-deps
+  const change = (v: string) => {
+    setText(v);
+    setSaved(false);
+    clearTimeout(timer.current);
+    timer.current = setTimeout(() => o.saveNotes(v).then(() => setSaved(true)).catch(() => {}), 800);
+  };
+  return (
+    <Panel title={<><IconNotes size={13} /> Notes</>} right={<Text size="xs" c="dimmed">{text === undefined ? "" : saved ? "Saved" : "Saving…"}</Text>}>
+      <Textarea size="xs" autosize minRows={2} maxRows={8} placeholder="Plans, ideas, things to check. Only you can see these." disabled={text === undefined}
+        value={text ?? ""} onChange={(e) => change(e.currentTarget.value)} />
+    </Panel>
+  );
+}
+
+/** Your mistakes from the review, with the move that was better. */
+interface Slip { node: GNode; label: string; played: string; better: string; best: string; loss: string }
+function slipsFor(tree: GameTree, mine: Color): Slip[] {
+  return tree.mainline.filter((n) => (n.nag === 2 || n.nag === 4) && n.parent?.turn === mine && n.parent.best).map((n) => {
+    const before = n.parent!;
+    const ply = tree.mainline.indexOf(n);
+    const better = sanLine(before.fen, [before.best!], tree.rules, 1).replace(/^\d+\.(\.\.)?\s*/, "");
+    return {
+      node: n, label: `${Math.floor(ply / 2) + 1}.${mine === "black" ? ".." : ""}`, played: n.san, better, best: before.best!,
+      loss: before.eval && n.eval ? `${scoreText(before.eval)} → ${scoreText(n.eval)}` : "",
+    };
+  });
+}
+
 interface Floating { id: number; emoji: string; left: number }
 
 /** An online game being played or watched. */
@@ -674,6 +801,8 @@ export function OnlineGame() {
   const [floating, setFloating] = useState<Floating[]>([]);
   const [reported, setReported] = useState(false);
   const [evalOn, setEvalOn] = useState<boolean>(load("onlineSpectatorEval", true));
+  /** The mistake being shown on the board, from the review. */
+  const [inspect, setInspect] = useState<number>();
   const seenRoom = useRef(0);
   const [, tick] = useState(0);
   useEffect(() => { const t = setInterval(() => tick((n) => n + 1), 200); return () => clearInterval(t); }, []);
@@ -681,6 +810,9 @@ export function OnlineGame() {
   const tree = useMemo(() => { const t = o.toTree(g); t.toEnd(); return t; }, [g.id, g.ply, g.status]); // eslint-disable-line react-hooks/exhaustive-deps
   useTree(tree);
   const review = useAutoReview(g, seat?.color);
+  const slips = useMemo(() => (review?.tree && seat ? slipsFor(review.tree, seat.color) : []), [review?.tree, seat?.color]); // eslint-disable-line react-hooks/exhaustive-deps
+  const slip = inspect !== undefined ? slips[inspect] : undefined;
+  useEffect(() => setInspect(undefined), [g.id]);
 
   // Spectators see the engine's view, three moves behind while the game is on, so players can't use it.
   const DELAY = 3;
@@ -717,6 +849,10 @@ export function OnlineGame() {
     return t.play(pending) ? { fen: t.fen, lastMove: t.current.lastMove } : { fen: tree.fen, lastMove: tree.current.lastMove };
   }, [pending, tree]);
 
+  const slipShapes: Shape[] | undefined = slip ? [
+    { from: slip.best.slice(0, 2), to: slip.best.slice(2, 4), color: "green" },
+    ...(slip.node.lastMove ? [{ from: slip.node.lastMove[0], to: slip.node.lastMove[1], color: "red" as const }] : []),
+  ] : undefined;
   const sendMove = (uci: string) => (confirm ? setPending(uci) : o.move(uci));
   useEffect(() => {
     if (!pending) return;
@@ -759,6 +895,7 @@ export function OnlineGame() {
   const oppGuest = opp?.guest && opp.guest !== o.profile?.id ? opp.guest : undefined;
   const canFriend = !!oppGuest && !o.friends.some((f) => f.id === oppGuest);
   const arenaBreak = g.arena && o.arena?.info.id === g.arena && g.status === "finished" && seat ? Math.max(0, ARENA_BREAK_MS - (Date.now() - (o.endedAt ?? 0))) : undefined;
+  const casual = !!seat && !g.rated && !g.arena && !g.swiss;
   const canBerserk = !!seat && !!g.arena && g.status === "playing" && !g.berserk?.[mine!] && (mine === "white" ? g.ply === 0 : g.ply <= 1);
   const roomTalk = o.room.filter((l) => l.kind === "text");
   const showRoom = !o.hideRoom;
@@ -769,7 +906,8 @@ export function OnlineGame() {
         {strip(top)}
         <div className="boardrow" style={{ position: "relative" }}>
           {spectating && <EvalBar score={score} flipped={bottom === "black"} />}
-          <Board fen={shown.fen} rules={tree.rules} chess960={tree.chess960} orientation={bottom} lastMove={shown.lastMove} movable={canMove ? mine : undefined}
+          <Board fen={slip ? slip.node.parent!.fen : shown.fen} rules={tree.rules} chess960={tree.chess960} orientation={bottom}
+            lastMove={slip ? slip.node.parent!.lastMove : shown.lastMove} movable={canMove && !slip ? mine : undefined} shapes={slipShapes}
             onMove={(m) => { const pos = positionOf(tree.fen, tree.rules); sendMove(uciOf(pos, m, tree.chess960)); }}
             premove={canPremove ? { color: mine!, onSet: (a, b) => o.setPremove([a, b]), onUnset: () => o.setPremove(undefined) } : undefined} />
           <div className="reactions">{floating.map((f) => <span key={f.id} className="reaction" style={{ left: `${f.left}%` }}>{f.emoji}</span>)}</div>
@@ -822,6 +960,12 @@ export function OnlineGame() {
               {g.status === "playing" && g.ply >= 2 && <Button size="xs" variant="default" color="red" leftSection={<IconFlag size={13} />} onClick={() => o.act("resign")}>Resign</Button>}
               {g.status === "playing" && g.ply >= 2 && !opponentOffers && <Button size="xs" variant="default" disabled={!!iOffered} leftSection={<IconHandStop size={13} />} onClick={() => o.act("draw")}>{iOffered ? "Draw offered" : "Offer draw"}</Button>}
               {opponentOffers && <><Button size="xs" onClick={() => o.act("draw")}>Accept draw</Button><Button size="xs" variant="default" onClick={() => o.act("decline")}>Decline</Button></>}
+              {casual && g.status === "playing" && g.takeback && g.takeback !== mine && (
+                <><Button size="xs" color="teal" onClick={() => o.takeback()}>Allow takeback</Button><Button size="xs" variant="default" onClick={() => o.declineTakeback()}>Refuse</Button></>
+              )}
+              {casual && g.status === "playing" && g.takeback !== opponent && g.ply >= (mine === "white" ? 1 : 2) && (
+                <Tooltip label="Ask to take back your last move"><Button size="xs" variant="default" disabled={g.takeback === mine} leftSection={<IconArrowBackUp size={13} />} onClick={() => o.takeback()}>{g.takeback === mine ? "Takeback asked" : "Takeback"}</Button></Tooltip>
+              )}
               {g.status === "finished" && !g.arena && !g.swiss && <Button size="xs" onClick={() => o.act("rematch")}>{g.rematch ? "Accept rematch" : "Rematch"}</Button>}
               {oppGuest && g.status !== "waiting" && (
                 <Menu position="bottom-end" withinPortal>
@@ -845,6 +989,10 @@ export function OnlineGame() {
             <Text size="sm" mt={6}>Your {CATEGORY_LABELS[g.category]?.toLowerCase() ?? ""} rating is now <b>{ratingFor(o.profile, g.category)}</b>.</Text>
           )}
           {!seat && spectating && g.status === "playing" && <Text size="xs" c="dimmed" mt={4}>The evaluation runs three moves behind the game.</Text>}
+          {o.tv && !seat && (
+            <Select mt={8} size="xs" label="Channel" value={o.tvChannel} allowDeselect={false} onChange={(v) => v && o.watchTV(v)}
+              data={TV_CHANNELS.map((c) => ({ value: c, label: c === "all" ? "Top game" : CATEGORY_LABELS[c] ?? c }))} />
+          )}
         </Panel>
         {review && (review.prep || review.progress < 100 || review.summary || review.error || review.note) && (
           <Panel title="Game review">
@@ -865,6 +1013,26 @@ export function OnlineGame() {
                   ))}
                 </Group>
                 {!!review.added && <Text size="xs" mt={6}>{review.added} of your mistakes are now puzzles under Puzzles, My mistakes.</Text>}
+                {slips.length > 0 && (
+                  <div style={{ marginTop: 8 }}>
+                    <Text size="xs" fw={700} mb={2}>What you should have played</Text>
+                    {slip ? (
+                      <div style={{ padding: 8, borderRadius: 6, background: "var(--bg-raised)" }}>
+                        <Text size="sm">At <b>{slip.label}</b> you played <b style={{ color: "#e5534b" }}>{slip.played}</b>; <b style={{ color: "#3fb950" }}>{slip.better}</b> was better.</Text>
+                        {slip.loss && <Text size="xs" c="dimmed">Evaluation {slip.loss}</Text>}
+                        <Group gap={4} mt={6}>
+                          <Button size="compact-xs" variant="default" disabled={inspect === 0} onClick={() => setInspect((inspect ?? 0) - 1)}>Previous</Button>
+                          <Button size="compact-xs" variant="default" disabled={inspect === slips.length - 1} onClick={() => setInspect((inspect ?? 0) + 1)}>Next</Button>
+                          <Button size="compact-xs" variant="subtle" onClick={() => setInspect(undefined)}>Back to the game</Button>
+                        </Group>
+                      </div>
+                    ) : (
+                      <Group gap={4}>
+                        {slips.map((x, i) => <Button key={i} size="compact-xs" variant="light" color={x.node.nag === 4 ? "red" : "orange"} onClick={() => setInspect(i)}>{x.label} {x.played}</Button>)}
+                      </Group>
+                    )}
+                  </div>
+                )}
                 <Button mt={8} size="xs" variant="light" onClick={() => review.tree && app.openGame(review.tree)}>Open the review</Button>
               </>
             ) : review.note ? <Text size="xs" c="dimmed">{review.note}</Text> : null}
@@ -872,6 +1040,7 @@ export function OnlineGame() {
           </Panel>
         )}
         <Panel grow pad={false} title="Moves"><MoveList tree={tree} editable={false} /></Panel>
+        {seat && g.status !== "waiting" && <Notes gameId={g.id} />}
         {(seat || showRoom) && (
           <Panel title={seat && showRoom ? (
             <SegmentedControl size="xs" value={chatTab} onChange={setChatTab} data={[{ value: "players", label: "Opponent" }, { value: "room", label: `Spectators${roomTalk.length ? ` (${roomTalk.length})` : ""}` }]} />

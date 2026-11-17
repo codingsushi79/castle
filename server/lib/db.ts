@@ -2,6 +2,15 @@ import { neon } from "@neondatabase/serverless";
 import { cleanText, isOffensiveName } from "./moderation.js";
 
 export const sql = neon(process.env.DATABASE_URL!);
+
+/**
+ * Tells the live-update servers that something changed, so they push it at once
+ * (api/live.ts listens). Never fails a request: at worst the change arrives with the next poll.
+ *   {t:"game", id} a game changed; {t:"room", room} a chat line; {t:"inbox", guest} something for a player.
+ */
+export async function ping(...events: Record<string, string | null | undefined>[]) {
+  for (const e of events) await sql`select pg_notify('castle', ${JSON.stringify(e)})`.catch(() => {});
+}
 export type Color = "white" | "black";
 export type Row = Record<string, any>;
 export type Handler = (req: Request, url: URL, body: any) => Promise<Response>;

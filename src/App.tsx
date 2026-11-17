@@ -7,6 +7,7 @@ import {
 import { ReactNode, useEffect, useState } from "react";
 import { CheatSheet, CommandPalette, openPalette } from "./components/Palette";
 import { WhatsNew } from "./components/WhatsNew";
+import { MiniTV } from "./components/MiniTV";
 import { useOnline } from "./lib/online";
 import { ChallengeCard } from "./pages/Online";
 import { useBatch } from "./lib/batch";
@@ -175,6 +176,7 @@ export default function App() {
       <CommandPalette />
       <CheatSheet opened={cheat} onClose={() => setCheat(false)} />
       <WhatsNew />
+      <MiniTV />
       <ChallengeStack />
       <div className="shell">
         <div className="titlebar" data-tauri-drag-region>
@@ -210,7 +212,8 @@ export default function App() {
           <span><IconDatabase size={13} /> {games.toLocaleString()} games</span>
           {lichess.state === "online" && <span><IconBolt size={13} /> {lichess.username}</span>}
           {batch.running && <span style={{ cursor: "pointer" }} onClick={() => go("library")}>Reviewing {batch.done + 1} of {batch.total}{batch.current ? `: ${batch.current}` : ""}</span>}
-          {updates.status === "available" && <span style={{ cursor: "pointer", fontWeight: 700 }} onClick={() => go("settings")}>Update to {versionLabel(updates.version!)}</span>}
+          {updates.status === "ready" && <span style={{ cursor: "pointer", fontWeight: 700 }} onClick={() => updates.install()}>Restart to update to {versionLabel(updates.version!)}</span>}
+          {(updates.status === "available" || updates.status === "downloading") && <span style={{ cursor: "pointer" }} onClick={() => go("settings")}>{updates.status === "downloading" ? `Downloading ${versionLabel(updates.version!)}… ${updates.progress}%` : `Update to ${versionLabel(updates.version!)}`}</span>}
           <span className="grow">{status}</span>
           <span style={{ cursor: "pointer" }} onClick={() => setCheat(true)}>Shortcuts</span>
           <span>Castle</span>

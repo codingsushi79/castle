@@ -1,3 +1,4 @@
+import { Client, neonConfig } from "@neondatabase/serverless";
 import http from "node:http";
 import { WebSocket, WebSocketServer } from "ws";
 import "../lib/arena.js"; // finishing a game here (a flag) must still score arenas
@@ -11,8 +12,10 @@ import "../lib/swiss.js"; // and Swiss tournaments
  * instead of on the app's next poll.
  *
  * A socket may land on any server instance, and the player who moves may be on
- * another. So each instance looks for changes to everything its own sockets
- * watch, in one query every 400 ms, and only while someone is connected.
+ * another. Every change is announced with Postgres NOTIFY (db.ts ping()), and
+ * each instance LISTENs on a direct database connection and pushes what its
+ * sockets watch at once. If it can't listen, it looks for changes itself, in
+ * one query every 400 ms; while listening, that check runs every 3 s as a safety net.
  *
  * App → server: {t:"watch", games:[ids]}, {t:"rooms", rooms:[ids]}, {t:"hello", token}
  * Server → app: {t:"game", game}, {t:"room", room, lines}, {t:"inbox"}
@@ -26,6 +29,72 @@ let inboxSince = Date.now();
 let ticks = 0;
 let timer: ReturnType<typeof setInterval> | undefined;
 let busy = false;
+/** Whether this instance hears NOTIFY (push) or only checks (poll). */
+let listening = false;
+const dirty = { games: new Set<string>(), guests: new Set<string>(), rooms: false };
+let flushTimer: ReturnType<typeof setTimeout> | undefined;
+
+neonConfig.webSocketConstructor = WebSocket;
+
+/** LISTENs for changes on a direct (unpooled) connection: pooled connections can't LISTEN. */
+async function listen() {
+  if (listening) return;
+  const url = process.env.DATABASE_URL_UNPOOLED ?? (process.env.DATABASE_URL ?? "").replace("-pooler.", ".");
+  const client = new Client(url);
+  client.on("notification", (msg: { payload?: string }) => {
+    try { onEvent(JSON.parse(msg.payload ?? "{}")); } catch { /* not ours */ }
+  });
+  client.on("error", () => {
+    listening = false;
+    restartTimer();
+    client.end().catch(() => {});
+    if (subs.size) setTimeout(() => listen().catch(() => {}), 5000);
+  });
+  await client.connect();
+  await client.query("LISTEN castle");
+  listening = true;
+  restartTimer();
+}
+
+function onEvent(e: { t?: string; id?: string; guest?: string; room?: string }) {
+  if (e.t === "game" && e.id) dirty.games.add(e.id);
+  else if (e.t === "inbox" && e.guest) dirty.guests.add(e.guest);
+  else if (e.t === "room") dirty.rooms = true;
+  else return;
+  flushTimer ??= setTimeout(flush, 15);
+}
+
+/** Pushes what the notifications said changed. */
+async function flush() {
+  flushTimer = undefined;
+  const games = [...dirty.games], guests = new Set(dirty.guests), rooms = dirty.rooms;
+  dirty.games.clear(); dirty.guests.clear(); dirty.rooms = false;
+  try {
+    const watched = new Set([...subs.values()].flatMap((s) => [...s.games]));
+    const ids = games.filter((id) => watched.has(id));
+    if (ids.length || games.length) {
+      const rows = await sql`select * from games where id = any(${games})`;
+      for (const g of rows) {
+        // A correspondence move is news for both players' inboxes, wherever they are in the app.
+        if (g.days) { if (g.white_guest) guests.add(g.white_guest); if (g.black_guest) guests.add(g.black_guest); }
+        if (!watched.has(g.id)) continue;
+        sent.set(g.id, signature(g));
+        const msg = { t: "game", game: view(g) };
+        for (const [ws, s] of subs) if (s.games.has(g.id)) send(ws, msg);
+      }
+    }
+    for (const [ws, s] of subs) if (s.guest && guests.has(s.guest)) send(ws, { t: "inbox" });
+    if (rooms) await pushRooms();
+  } catch (e) {
+    console.error(e);
+  }
+}
+
+function restartTimer() {
+  if (!timer) return;
+  clearInterval(timer);
+  timer = setInterval(tick, listening ? 3000 : 400);
+}
 
 const signature = (g: Record<string, any>) => [g.updated_at, g.ply, g.status, g.draw_offer, g.white_berserk, g.black_berserk].join("|");
 const send = (ws: WebSocket, msg: unknown) => ws.readyState === WebSocket.OPEN && ws.send(JSON.stringify(msg));
@@ -96,8 +165,11 @@ const wss = new WebSocketServer({ server, maxPayload: 16 * 1024 });
 wss.on("connection", (ws) => {
   const sub: Sub = { games: new Set(), rooms: new Set() };
   subs.set(ws, sub);
-  timer ??= setInterval(tick, 400);
+  timer ??= setInterval(tick, listening ? 3000 : 400);
+  // Start reading chat from here, before any line can arrive.
+  if (chatAfter < 0) sql`select coalesce(max(id), 0) as m from chat`.then((r) => { if (chatAfter < 0) chatAfter = Number(r[0].m); }).catch(() => {});
   ensureSchema(sql).catch(() => {});
+  listen().catch(() => { listening = false; });
   ws.on("message", async (raw) => {
     let m: any;
     try { m = JSON.parse(String(raw)); } catch { return; }
@@ -114,7 +186,7 @@ wss.on("connection", (ws) => {
       const p = await verified(m.token).catch(() => undefined);
       sub.guest = p?.id;
     } else if (m.t === "ping") {
-      send(ws, { t: "pong" });
+      send(ws, { t: "pong", mode: listening ? "push" : "poll" });
     }
   });
   ws.on("close", () => {

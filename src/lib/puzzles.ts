@@ -18,7 +18,7 @@ export interface Puzzle {
 }
 
 /** "battle" is a race against another player online (lib/battle.ts runs it). */
-export type PuzzleMode = "rated" | "rush" | "mistakes" | "daily" | "pack" | "battle";
+export type PuzzleMode = "rated" | "rush" | "mistakes" | "daily" | "pack" | "battle" | "storm";
 export type PuzzleStatus = "loading" | "solving" | "wrong" | "solved" | "revealed" | "empty" | "rushOver";
 
 export interface PuzzleStats {
@@ -203,7 +203,7 @@ export const usePuzzles = create<State>((set, get) => {
         if (c.length >= 5) all.push({ id: c[0], fen: c[1], moves: c[2].split(" "), rating: parseInt(c[3], 10) || 1500, themes: c[4].split(" ") });
       }
       set({ all, loaded: true });
-      if (get().mode !== "rush" && get().mode !== "battle") get().next();
+      if (!["rush", "battle", "storm"].includes(get().mode)) get().next();
     },
 
     daily: () => {
@@ -231,7 +231,7 @@ export const usePuzzles = create<State>((set, get) => {
         generation++;
         set({ puzzle: undefined, status: "rushOver", rushScore: 0, rushStrikes: 0 });
       } else if (mode === "pack") { generation++; set({ puzzle: undefined, status: "empty", packId: undefined }); }
-      else if (mode === "battle") { generation++; set({ puzzle: undefined, status: "empty" }); }
+      else if (mode === "battle" || mode === "storm") { generation++; set({ puzzle: undefined, status: "empty" }); }
       else get().next();
     },
 

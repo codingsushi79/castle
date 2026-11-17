@@ -33,10 +33,15 @@ function inline(text: string): ReactNode {
   return text.split(/(\*\*[^*]+\*\*)/).map((part, i) => (part.startsWith("**") ? <b key={i}>{part.slice(2, -2)}</b> : <Fragment key={i}>{part}</Fragment>));
 }
 
-function ReleaseNotes({ r }: { r: Release }) {
+/** Release notes written in CHANGELOG.md's style (an update's notes come in this form). */
+export function NotesText({ text }: { text: string }) {
+  return <ReleaseNotes r={{ version: "", lines: text.split("\n").map((l) => l.trimEnd()) }} bare />;
+}
+
+function ReleaseNotes({ r, bare = false }: { r: Release; bare?: boolean }) {
   return (
     <div style={{ marginBottom: 18 }}>
-      <Text fw={800} size="lg" mb={4}>Castle {versionLabel(r.version)} {r.version.includes("-") && <Badge size="xs" variant="light" color="orange" ml={4}>Beta</Badge>}</Text>
+      {!bare && <Text fw={800} size="lg" mb={4}>Castle {versionLabel(r.version)} {r.version.includes("-") && <Badge size="xs" variant="light" color="orange" ml={4}>Beta</Badge>}</Text>}
       {r.lines.map((l, i) =>
         l.startsWith("### ") ? <Text key={i} fw={700} size="sm" mt={10} mb={2}>{l.slice(4)}</Text>
         : l.startsWith("- ") ? <Text key={i} size="sm" pl={14} style={{ textIndent: -10 }} mb={3}>• {inline(l.slice(2))}</Text>

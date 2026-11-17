@@ -41,6 +41,8 @@ export interface GameView {
   /** Correspondence: days per move (the clocks then count down days). */
   days?: number | null; category?: string | null; swiss?: string | null; round?: number | null;
   berserk?: Record<Color, boolean>;
+  /** Goes up when moves are taken back; a takeback request pending from this colour. */
+  rev?: number; takeback?: Color | null;
   /** Milliseconds since each player was last heard from (while playing). */
   away?: Record<Color, number | null>;
   moves: string[]; ply: number; clocks: Record<Color, number>; running: boolean;
@@ -61,14 +63,22 @@ export interface SwissInfo {
 }
 export interface SwissStanding { guest: string; name: string; rating: number | null; points: number; buchholz: number; byes: number; games: number; withdrawn: boolean }
 export interface SwissPairing { id: string; white: string; black: string; status: string; result: string | null }
+export interface Team { id: string; code: string; name: string; mine: boolean; members: { guest: string; name: string; online: boolean }[] }
+export interface TeamStanding { id: string; name: string; score: number; players: number; leaders: string[] }
+/** One finished game, for the stats page. */
+export interface StatGame {
+  id: string; code: string; color: Color; score: number; category: string | null; variant: string; rated: boolean; reason: string | null;
+  rating: number | null; after: number | null; opponent: string | null; opponentRating: number | null; moves: string[]; at: number;
+}
+export const TV_CHANNELS = ["all", "bullet", "blitz", "rapid", "classical", "chess960", "crazyhouse", "atomic", "kingofthehill", "3check", "antichess", "horde", "racingkings"];
 export interface RoomLine { id: number; name: string; kind: "text" | "react"; text: string; at: number; guest?: string | null }
 export interface OpenBattle { id: string; code: string; name: string; minutes: number }
 export interface ArenaInfo {
   id: string; name: string; minutes: number; increment: number; variant: OnlineVariant;
   startsAt: number; endsAt: number; status: "upcoming" | "running" | "finished";
-  players?: number; leader?: string | null; top?: number;
+  players?: number; leader?: string | null; top?: number; teamLeaders?: number | null;
 }
-export interface ArenaPlayer { guest: string; name: string; rating: number | null; score: number; streak: number; games: number; playing: boolean; active: boolean }
+export interface ArenaPlayer { guest: string; name: string; rating: number | null; score: number; streak: number; games: number; playing: boolean; active: boolean; team?: string | null }
 
 export const REACTIONS = ["👏", "🔥", "😮", "😂", "♟️", "💀"];
 /** How long a silent opponent is given before the game can be claimed (the server's rule). */
@@ -156,7 +166,7 @@ interface State {
   /** A challenge this player sent and is waiting on. */
   challenging?: { id: string; name: string; game: string };
   arenas: ArenaInfo[];
-  arena?: { info: ArenaInfo; players: ArenaPlayer[]; status: string; paused: boolean };
+  arena?: { info: ArenaInfo; players: ArenaPlayer[]; status: string; paused: boolean; teams?: TeamStanding[] | null };
   /** Open puzzle battles (checked by the server). */
   races: OpenBattle[];
   /** Whether the live-update socket is connected (polling slows down while it is). */
@@ -174,7 +184,11 @@ interface State {
   tourRoom: RoomLine[];
   /** Watching Castle TV: the next top game follows when this one ends. */
   tv: boolean;
+  tvChannel: string;
   leaderCategory: string;
+  team?: Team | null;
+  /** Set when an administrator has suspended this player. */
+  banned?: { until: number; reason: string | null } | null;
   setName: (name: string) => void;
   start: () => Promise<void>;
   /** Signs in quietly at launch (when this computer has played online before) so challenges arrive. */
@@ -189,7 +203,7 @@ interface State {
   leave: () => void;
   move: (uci: string) => void;
   setPremove: (p?: [string, string]) => void;
-  act: (action: "resign" | "abort" | "cancel" | "draw" | "decline" | "rematch" | "claim" | "claim-draw" | "berserk") => Promise<void>;
+  act: (action: "resign" | "abort" | "cancel" | "draw" | "decline" | "rematch" | "claim" | "claim-draw" | "berserk" | "takeback" | "takeback-decline") => Promise<void>;
   say: (text: string) => void;
   sayToRoom: (text: string, kind?: "text" | "react") => Promise<void>;
   setOption: (o: Partial<Pick<State, "confirmMoves" | "autoReview" | "muteOpponent" | "hideRoom">>) => void;
@@ -208,7 +222,18 @@ interface State {
   withdrawSwiss: () => Promise<void>;
   createSwiss: (o: { title: string; minutes: number; increment: number; variant: OnlineVariant; rounds: number; startsIn: number }) => Promise<void>;
   sayToTour: (text: string) => Promise<void>;
-  watchTV: () => Promise<void>;
+  watchTV: (channel?: string) => Promise<void>;
+  takeback: () => Promise<void>;
+  declineTakeback: () => Promise<void>;
+  loadNotes: () => Promise<string>;
+  saveNotes: (text: string) => Promise<void>;
+  refreshTeam: () => Promise<void>;
+  createTeam: (title: string) => Promise<void>;
+  joinTeam: (code: string) => Promise<void>;
+  leaveTeam: () => Promise<void>;
+  loadStats: () => Promise<StatGame[]>;
+  /** After reviewing a finished game, tells the server both sides' accuracy (for spotting engine help). */
+  reportAccuracy: (gameId: string, white?: number, black?: number) => void;
   setLeaderCategory: (c: string) => void;
   addFriend: (f: Friend) => void;
   removeFriend: (id: string) => void;
@@ -218,7 +243,7 @@ interface State {
   joinArena: (id: string) => Promise<void>;
   pauseArena: () => Promise<void>;
   leaveArena: () => void;
-  createArena: (o: { title: string; minutes: number; increment: number; variant: OnlineVariant; startsIn: number; duration: number }) => Promise<void>;
+  createArena: (o: { title: string; minutes: number; increment: number; variant: OnlineVariant; startsIn: number; duration: number; teams?: string[]; leaders?: number }) => Promise<void>;
   toTree: (g?: GameView) => GameTree;
 }
 
@@ -267,7 +292,7 @@ export const useOnline = create<State>((set, get) => {
   /** Takes a server view unless it is behind moves this side already knows. */
   const accept = (v: GameView) => {
     const g = get().game;
-    if (g && g.id === v.id && v.status === "playing" && v.ply < g.ply) {
+    if (g && g.id === v.id && v.status === "playing" && v.ply < g.ply && (v.rev ?? 0) <= (g.rev ?? 0)) {
       if (v.drawOffer !== g.drawOffer || v.away) set({ game: { ...g, drawOffer: v.drawOffer, away: v.away } });
       return;
     }
@@ -277,6 +302,10 @@ export const useOnline = create<State>((set, get) => {
       Sound.end();
       set({ endedAt: Date.now() });
       set({ chat: [...get().chat, { from: "system", text: `Game over: ${v.result === "aborted" ? "aborted" : `${v.result}, ${v.reason}`}.` }] });
+    }
+    if (before && (v.rev ?? 0) > (before.rev ?? 0)) set({ chat: [...get().chat, { from: "system", text: "A move was taken back." }] });
+    if (before && v.takeback && v.takeback !== before.takeback && v.takeback !== get().seat?.color) {
+      set({ chat: [...get().chat, { from: "system", text: `${v.takeback === "white" ? "White" : "Black"} asks to take back a move.` }] });
     }
     if (before && v.drawOffer && v.drawOffer !== before.drawOffer && v.drawOffer !== get().seat?.color) {
       set({ chat: [...get().chat, { from: "system", text: `${v.drawOffer === "white" ? "White" : "Black"} offers a draw.` }] });
@@ -296,8 +325,12 @@ export const useOnline = create<State>((set, get) => {
 
   /** Castle TV: the live game between the highest-rated players, then the next. */
   const nextTV = async (skip = "") => {
-    const r = await api<GameView & { none?: boolean }>(`tv?skip=${encodeURIComponent(skip)}`).catch(() => undefined);
-    if (!r || r.none) return set({ error: "No games are on Castle TV right now. Try again in a moment." });
+    const ch = get().tvChannel;
+    const r = await api<GameView & { none?: boolean }>(`tv?skip=${encodeURIComponent(skip)}${ch !== "all" ? `&category=${encodeURIComponent(ch)}` : ""}`).catch(() => undefined);
+    if (!r || r.none) {
+      if (get().tv && get().game && !get().seat) return; // keep showing the last game until another starts
+      return set({ error: `No ${ch === "all" ? "" : `${CATEGORY_LABELS[ch] ?? ch} `}games are on Castle TV right now. Try again in a moment.` });
+    }
     closePeer();
     set({ seat: undefined, game: r, receivedAt: Date.now(), link: "none", chat: [], room: [], tv: true });
     schedule();
@@ -658,8 +691,8 @@ export const useOnline = create<State>((set, get) => {
         }
       }
       if (ticks++ % 3 === 0) {
-        const s = await api<{ arena: ArenaInfo; players: ArenaPlayer[] }>(`arena?id=${encodeURIComponent(a.info.id)}`).catch(() => undefined);
-        if (s && get().arena?.info.id === a.info.id) set({ arena: { ...get().arena!, info: s.arena, players: s.players } });
+        const s = await api<{ arena: ArenaInfo; players: ArenaPlayer[]; teams?: TeamStanding[] | null }>(`arena?id=${encodeURIComponent(a.info.id)}`).catch(() => undefined);
+        if (s && get().arena?.info.id === a.info.id) set({ arena: { ...get().arena!, info: s.arena, players: s.players, teams: s.teams } });
       }
     };
     tick();
@@ -690,6 +723,7 @@ export const useOnline = create<State>((set, get) => {
     swisses: [],
     tourRoom: [],
     tv: false,
+    tvChannel: load("onlineTvChannel", "all"),
     leaderCategory: load("onlineLeaderCategory", "blitz"),
     setName: (name) => { save("onlineName", name); set({ name }); },
     start: async () => {
@@ -699,7 +733,7 @@ export const useOnline = create<State>((set, get) => {
         let profile: Profile | undefined;
         let moved = false;
         if (t) {
-          profile = await api<{ profile: Profile; lichess?: string | null }>("me", { token: t }).then((r) => { set({ lichess: r.lichess ?? null }); return r.profile; }).catch((e) => {
+          profile = await api<{ profile: Profile; lichess?: string | null; banned?: { until: number; reason: string | null } | null }>("me", { token: t }).then((r) => { set({ lichess: r.lichess ?? null, banned: r.banned ?? null }); return r.profile; }).catch((e) => {
             if (e.status === 401) { moved = e.code === "moved"; return undefined; }
             throw e;
           });
@@ -714,6 +748,7 @@ export const useOnline = create<State>((set, get) => {
         watchInbox();
         connectLive();
         api<{ blocked: string[] }>("blocks", { token: t }).then((r) => { save("onlineBlocked", r.blocked); set({ blocked: r.blocked }); }).catch(() => {});
+        get().refreshTeam();
         const swiss = load<string | null>("onlineSwiss", null);
         if (swiss && !get().swiss) get().joinSwiss(swiss).catch(() => save("onlineSwiss", null));
         const arena = load<string | null>("onlineArena", null);
@@ -923,7 +958,34 @@ export const useOnline = create<State>((set, get) => {
         set({ error: e.message });
       }
     },
-    watchTV: () => nextTV(),
+    watchTV: (channel) => {
+      if (channel) { save("onlineTvChannel", channel); set({ tvChannel: channel }); }
+      return nextTV(channel ? "" : get().game?.id ?? "");
+    },
+    takeback: () => get().act("takeback"),
+    declineTakeback: () => get().act("takeback-decline"),
+    loadNotes: async () => {
+      const g = get().game, seat = get().seat;
+      if (!g || !seat || seat.id !== g.id) return "";
+      return (await api<{ text: string }>(`notes?id=${encodeURIComponent(g.id)}&key=${encodeURIComponent(seat.key)}`).catch(() => ({ text: "" }))).text;
+    },
+    saveNotes: async (text) => {
+      const g = get().game, seat = get().seat;
+      if (g && seat && seat.id === g.id) await api("notes", { id: g.id, key: seat.key, text });
+    },
+    refreshTeam: async () => {
+      const r = await api<{ team: Team | null }>("team/mine", { token: token() }).catch(() => undefined);
+      if (r) set({ team: r.team });
+    },
+    createTeam: async (title) => set({ team: (await api<{ team: Team }>("team/create", { token: token(), name: get().name, title })).team }),
+    joinTeam: async (code) => set({ team: (await api<{ team: Team }>("team/join", { token: token(), name: get().name, code })).team }),
+    leaveTeam: async () => { await api("team/leave", { token: token() }); set({ team: null }); },
+    loadStats: async () => (await api<{ games: StatGame[] }>(`stats?guest=${encodeURIComponent(get().profile?.id ?? "")}`)).games,
+    reportAccuracy: (gameId, white, black) => {
+      const seat = get().seat;
+      if (!seat || seat.id !== gameId || white === undefined || black === undefined) return;
+      api("accuracy", { id: gameId, key: seat.key, white, black }).catch(() => {});
+    },
     setLeaderCategory: (leaderCategory) => {
       save("onlineLeaderCategory", leaderCategory);
       set({ leaderCategory });

@@ -13,3 +13,18 @@ export function neon() {
   sql.query = async (text, params = []) => (await db.query(text, params)).rows;
   return sql;
 }
+
+/** The WebSocket Client, as far as LISTEN/NOTIFY goes, over PGlite. */
+export const neonConfig = {};
+export class Client {
+  handlers = {};
+  constructor() {}
+  on(event, cb) { this.handlers[event] = cb; }
+  async connect() {}
+  async query(text) {
+    const m = /^LISTEN (\w+)/i.exec(text);
+    if (m) await db.listen(m[1], (payload) => this.handlers.notification?.({ channel: m[1], payload }));
+    return { rows: [] };
+  }
+  async end() {}
+}

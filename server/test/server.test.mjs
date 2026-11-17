@@ -102,9 +102,21 @@ const muted = await call("chat", { id: s1.id, name: "Cy", text: "hello", token: 
 ok(muted._status === 403, "three different reports mute a guest's chat");
 const named = await call("games", { token: C.token, name: "sh1thead", minutes: 5 });
 ok((await call(`game?id=${named.id}`)).white.name === "Guest" || (await call(`game?id=${named.id}`)).black.name === "Guest", "offensive names become Guest");
+for (const fine of ["Knights", "NigeriaFan", "Scunthorpe", "Grapes", "Peacock", "Dickens", "Shiitake"]) {
+  const g9 = await call("games", { token: C.token, name: fine, minutes: 5 });
+  const v9 = await call(`game?id=${g9.id}`);
+  ok((v9.white.name ?? v9.black.name) === fine, `an ordinary name is kept: ${fine}`);
+}
+for (const bad of ["n1gg4", "F_U_C_K", "fagg0t"]) {
+  const g9 = await call("games", { token: C.token, name: bad, minutes: 5 });
+  const v9 = await call(`game?id=${g9.id}`);
+  ok((v9.white.name ?? v9.black.name) === "Guest", `a disguised slur is caught: ${bad}`);
+}
+await call("chat", { id: s1.id, name: "Watcher", text: "the Knights of Nigeria" });
 await call("chat", { id: s1.id, name: "Watcher", text: "what the fuck" });
 const lines = await call(`chat?id=${s1.id}&after=0`);
 ok(lines.lines.some((l) => l.text === "what the ****"), "offensive words are starred out in chat");
+ok(lines.lines.some((l) => l.text === "the Knights of Nigeria"), "ordinary words in chat are left alone");
 
 section("Challenges and presence");
 const ch = await call("challenge", { token: A.token, name: "Ann", to: B.id, minutes: 3, increment: 2, variant: "crazyhouse" });
@@ -255,7 +267,106 @@ ok(got.some((m) => m.t === "room" && m.lines[0].text === "nice"), "room chat is 
 await call("challenge", { token: A.token, name: "Ann", to: B.id, minutes: 3 });
 await until(() => got.some((m) => m.t === "inbox"), 6000);
 ok(got.some((m) => m.t === "inbox"), "a new challenge nudges the player's inbox");
+sock.send(JSON.stringify({ t: "ping" }));
+await until(() => got.some((m) => m.t === "pong"));
+ok(got.find((m) => m.t === "pong")?.mode === "push", "the live server listens for changes (push mode)");
+const before = got.length, t1 = Date.now();
+await call("move", { id: lg.id, key: lj.key, uci: "e7e5", ply: 1 });
+await until(() => got.slice(before).some((m) => m.t === "game" && m.game.ply === 2), 3000);
+ok(Date.now() - t1 < 1000, `a pushed move arrives without waiting for a check (${Date.now() - t1} ms)`);
 sock.close();
 live.close();
+
+section("Puzzle storm");
+const storm = await call("race/storm", { token: A.token, name: "Ann" });
+ok(storm.run.kind === "storm" && storm.run.status === "running", "a storm starts");
+const stormIds = (await db.query("select puzzles, ends_at from runs where id = $1", [storm.id])).rows[0];
+const endsBefore = Number(stormIds.ends_at);
+const wrong = await call("race/move", { id: storm.id, key: storm.key, index: 0, uci: "a1a1" });
+ok(wrong.result === "wrong" && wrong.run.status === "running" && wrong.run.endsAt === endsBefore - 10000, "a miss costs ten seconds, not a strike-out");
+for (let i = 0; i < 3; i++) await call("race/move", { id: storm.id, key: storm.key, index: i + 1, uci: "a1a1" });
+ok((await call(`race/run?id=${storm.id}&key=${storm.key}`)).status === "running", "storms have no three-strikes rule");
+await db.query("update runs set combo = 4, idx = 10, step = 1 where id = $1", [storm.id]);
+const p10 = puzzles.get(stormIds.puzzles[10]);
+let sres;
+for (let step = 1; step < p10.moves.length; step += 2) sres = await call("race/move", { id: storm.id, key: storm.key, index: 10, uci: p10.moves[step] });
+ok(sres.result === "solved" && sres.run.combo === 5 && sres.run.endsAt === endsBefore - 40000 + 3000, "five in a row earns three seconds");
+await db.query("update runs set ends_at = $1 where id = $2", [Date.now() - 1000, storm.id]);
+ok((await call("rush?kind=storm")).scores.some((x) => x.name === "Ann"), "storms have their own leaderboard");
+
+section("Takebacks and notes");
+const casual = await call("games", { token: A.token, name: "Ann", minutes: 10, increment: 0, color: "white", rated: false });
+const cj2 = await call("join", { token: B.token, name: "Bob", code: casual.code });
+await play(casual.id, [casual.key, cj2.key], ["e2e4", "e7e5", "g1f3"]);
+await call("action", { id: casual.id, key: cj2.key, action: "takeback" });
+let tb = await call(`game?id=${casual.id}`);
+ok(tb.takeback === "black", "a takeback is asked for");
+tb = await call("action", { id: casual.id, key: casual.key, action: "takeback" });
+ok(tb.ply === 1 && tb.moves.join(" ") === "e2e4" && tb.rev === 1, "accepting it undoes the asker's move and the reply");
+ok((await call("action", { id: s5.id, key: s5.key, action: "takeback" }))._status === 409, "no takebacks in rated games");
+await call("notes", { id: casual.id, key: casual.key, text: "Try the Italian next time" });
+ok((await call(`notes?id=${casual.id}&key=${casual.key}`)).text === "Try the Italian next time", "notes are saved with the game");
+ok((await call(`notes?id=${casual.id}&key=${cj2.key}`)).text === "", "and are private to each player");
+ok((await call(`notes?id=${casual.id}&key=nope`))._status === 403, "nobody else can read them");
+
+section("Stats and accuracy flags");
+const stats = await call(`stats?guest=${A.id}`);
+ok(stats.games.length >= 3 && stats.games.every((x) => ["white", "black"].includes(x.color) && typeof x.score === "number"), "stats list your games with colour and score");
+ok(stats.games.some((x) => x.category === "bullet" && x.after), "with ratings by category");
+process.env.ADMIN_KEY = "test-admin-key-123";
+const cheat = await guest();
+for (let i = 0; i < 8; i++) {
+  const g1 = await call("games", { token: cheat.token, name: "Sus", minutes: 3, increment: 0, color: "white", rated: false });
+  const j9 = await call("join", { token: B.token, name: "Bob", code: g1.code });
+  await db.query("update games set status = 'finished', result = '1-0', ply = 30 where id = $1", [g1.id]);
+  await call("accuracy", { id: g1.id, key: j9.key, white: 97, black: 70 });
+  await call("accuracy", { id: g1.id, key: g1.key, white: 50, black: 50 });
+}
+const modList = await call("mod/list", { key: "test-admin-key-123" });
+ok(modList.flagged.some((f) => f.guest === cheat.id && f.accuracy === 97 && f.games === 8), "eight opponent-reviewed games at 97% flag a player (their own reports don't count)");
+ok(modList.reported.some((r) => r.guest === C.id && r.reporters === 3), "the moderation list shows reported players");
+ok((await call("mod/list", { key: "wrong" }))._status === 401, "the moderation list needs the key");
+ok((await call("g?id=x")).text !== undefined && (await call("mod")).text.includes("Castle Online moderation"), "the moderation page is served");
+
+section("Bans");
+await call("mod/ban", { key: "test-admin-key-123", guest: cheat.id, days: 7, reason: "engine use" });
+const banned = await call("games", { token: cheat.token, name: "Sus", minutes: 3 });
+ok(banned._status === 403 && banned.code === "banned" && banned.error.includes("engine use"), "a banned player can't start games, and is told why");
+ok((await call("chat", { id: s1.id, name: "Sus", text: "hi", token: cheat.token }))._status === 403, "or chat");
+ok((await call("me", { token: cheat.token })).banned?.reason === "engine use", "their app is told about the ban");
+await call("mod/unban", { key: "test-admin-key-123", guest: cheat.id });
+ok((await call("games", { token: cheat.token, name: "Sus", minutes: 3 })).key, "unbanning lifts it");
+
+section("Teams and team battles");
+const tA = await call("team/create", { token: A.token, name: "Ann", title: "Knights" });
+ok(tA.team?.code && tA.team.members.length === 1, "a team is created with a join code");
+ok((await call("team/create", { token: A.token, name: "Ann", title: "Other" }))._status === 409, "one team at a time");
+const tB = await call("team/create", { token: B.token, name: "Bob", title: "Rooks" });
+const D = await guest();
+await call("team/join", { token: D.token, name: "Dee", code: tA.team.code });
+ok((await call("team/mine", { token: A.token })).team.members.length === 2, "players join by code");
+const tbattle = await call("arena/create", { token: A.token, name: "Ann", title: "Knights v Rooks", minutes: 3, increment: 0, startsIn: 0, duration: 30, teams: [tA.team.code, tB.team.code], leaders: 2 });
+ok(tbattle.id, "a team battle is created");
+ok((await call("arena/join", { token: C.token, name: "Cy", id: tbattle.id }))._status === 403, "only the teams' members can join");
+for (const [p, n] of [[A, "Ann"], [D, "Dee"], [B, "Bob"]]) await call("arena/join", { token: p.token, name: n, id: tbattle.id });
+const pA2 = await call("arena/pair", { token: A.token, id: tbattle.id });
+const pD2 = await call("arena/pair", { token: D.token, id: tbattle.id });
+ok(pA2.status !== "seated" || pA2.seat.id !== pD2.seat?.id, "teammates aren't paired against each other");
+const pB2 = await call("arena/pair", { token: B.token, id: tbattle.id });
+const tbGame = [pA2, pD2].find((x) => x.seat && x.seat.id === pB2.seat?.id);
+ok(!!tbGame, "a Knight is paired with a Rook");
+const kn = tbGame.seat, rk = pB2.seat;
+const wk = kn.color === "white" ? kn : rk, bk = wk === kn ? rk : kn;
+await play(wk.id, [wk.key, bk.key], ["e2e4", "e7e5"]);
+await call("action", { id: rk.id, key: rk.key, action: "resign" });
+const tst = await call(`arena?id=${tbattle.id}`);
+ok(tst.arena.teamLeaders === 2 && tst.teams[0].name === "Knights" && tst.teams[0].score === 2, "the team table counts the winners' points");
+await call("team/leave", { token: D.token });
+ok((await call("team/mine", { token: D.token })).team === null, "players can leave a team");
+
+section("Castle TV channels");
+const tvBullet = await call("tv?category=correspondence");
+ok(tvBullet.none === true, "correspondence games are never on TV");
+ok((await call("tv?category=atomic")).none || (await call("tv?category=atomic")).variant === "atomic", "a channel shows only its category");
 
 done();

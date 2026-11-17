@@ -6,7 +6,8 @@
     "test": "node test/server.test.mjs",
     "typecheck": "tsc --noEmit",
     "sync-puzzles": "node scripts/sync-puzzles.mjs",
-    "test:client": "node test/client.test.mjs"
+    "test:client": "node test/client.test.mjs",
+    "test:play": "node test/two-player.test.mjs"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.0.0",

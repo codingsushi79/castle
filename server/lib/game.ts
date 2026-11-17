@@ -1,5 +1,5 @@
 import { canMate, Result, startFen, Variant, variantOf } from "./chess.js";
-import { Color, other, Row, sql } from "./db.js";
+import { Color, other, ping, Row, sql } from "./db.js";
 import { categoryOf, gamesIn, ratingIn } from "./ratings.js";
 import { elo, open, Profile, randomId } from "./token.js";
 
@@ -59,6 +59,7 @@ export async function finish(g: Row, result: Result | "aborted", reason: string)
       white_new = ${whiteNew}, black_new = ${blackNew}, draw_offer = null, updated_at = now()
     where id = ${g.id} and status = 'playing' returning *`;
   if (rows[0]) for (const h of hooks) await h(rows[0], result);
+  await ping({ t: "game", id: g.id });
   return rows[0] ?? (await load(g.id))!;
 }
 
@@ -119,6 +120,8 @@ export function view(g: Row) {
     clocks: { white: Math.max(0, c.white), black: Math.max(0, c.black) },
     running: g.status === "playing" && g.ply >= 1,
     drawOffer: g.draw_offer, result: g.result, reason: g.reason, rematch: g.rematch_id,
+    /** Goes up when moves are taken back, so apps know a shorter game is the newer one. */
+    rev: g.rev ?? 0, takeback: g.takeback_offer ?? null,
     now,
   };
 }
@@ -175,6 +178,7 @@ export async function takeSeat(g: Row, p: Profile, name: string) {
   const rows = color === "white"
     ? await sql`update games set white_guest = ${p.id}, white_name = ${name}, white_key = ${key}, white_rating = ${rating}, white_cgames = ${cgames}, status = 'playing', updated_at = now() where id = ${g.id} and status = 'waiting' returning id`
     : await sql`update games set black_guest = ${p.id}, black_name = ${name}, black_key = ${key}, black_rating = ${rating}, black_cgames = ${cgames}, status = 'playing', updated_at = now() where id = ${g.id} and status = 'waiting' returning id`;
+  if (rows.length) await ping({ t: "game", id: g.id });
   return rows.length ? { id: g.id as string, code: g.code as string, color, key } : undefined;
 }
 

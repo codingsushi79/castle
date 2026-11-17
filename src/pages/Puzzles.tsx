@@ -24,7 +24,7 @@ export default function PuzzlesPage() {
   const dailyDone = p.stats.dailySolved.includes(dayNumber());
   const raceKind = useRace((s) => s.kind);
   const raceError = useRace((s) => s.error);
-  if (p.mode === "battle" || (p.mode === "rush" && raceKind === "rush")) return <RacePage />;
+  if (p.mode === "battle" || p.mode === "storm" || (p.mode === "rush" && raceKind === "rush")) return <RacePage />;
 
   const status = {
     loading: ["Loading puzzles", "One moment…", "dimmed"],
@@ -41,7 +41,7 @@ export default function PuzzlesPage() {
       <div className="boardcol">
         <div className="toolbar" style={{ margin: "-14px -16px 6px" }}>
           <SegmentedControl value={p.mode} onChange={(v) => p.setMode(v as PuzzleMode)}
-            data={[{ value: "rated", label: "Rated" }, { value: "rush", label: "Rush" }, { value: "mistakes", label: `My mistakes${p.mistakes.length ? ` (${p.mistakes.length})` : ""}` }, { value: "daily", label: "Daily" }, { value: "pack", label: "Packs" }, { value: "battle", label: "Battle" }]} />
+            data={[{ value: "rated", label: "Rated" }, { value: "rush", label: "Rush" }, { value: "mistakes", label: `My mistakes${p.mistakes.length ? ` (${p.mistakes.length})` : ""}` }, { value: "daily", label: "Daily" }, { value: "pack", label: "Packs" }, { value: "storm", label: "Storm" }, { value: "battle", label: "Battle" }]} />
           <span style={{ flex: 1 }} />
           <Text size="xs" c="dimmed">{p.loaded ? `${p.all.length.toLocaleString()} puzzles` : "Loading…"}</Text>
         </div>
@@ -202,19 +202,19 @@ function PackCard() {
   );
 }
 
-/** The best checked rush runs from everyone who plays Castle Online. */
-function RushBoard({ minutes }: { minutes: number }) {
+/** The best checked rush (or storm) runs from everyone who plays Castle Online. */
+function RushBoard({ minutes, storm = false }: { minutes: number; storm?: boolean }) {
   const [length, setLength] = useState(minutes === 5 ? 5 : 3);
   const [scores, setScores] = useState<{ guest: string; name: string; score: number }[]>();
   const me = useOnline((s) => s.profile?.id);
   useEffect(() => {
     let live = true;
-    api<{ scores: { guest: string; name: string; score: number }[] }>(`rush?minutes=${length}`).then((r) => live && setScores(r.scores)).catch(() => live && setScores([]));
+    api<{ scores: { guest: string; name: string; score: number }[] }>(storm ? "rush?kind=storm" : `rush?minutes=${length}`).then((r) => live && setScores(r.scores)).catch(() => live && setScores([]));
     return () => { live = false; };
-  }, [length]);
+  }, [length, storm]);
   return (
-    <Panel title={<><IconTrophy size={13} /> Rush leaderboard</>} pad={false}
-      right={<SegmentedControl size="xs" value={String(length)} onChange={(v) => setLength(Number(v))} data={[{ value: "3", label: "3 min" }, { value: "5", label: "5 min" }]} />}>
+    <Panel title={<><IconTrophy size={13} /> {storm ? "Storm" : "Rush"} leaderboard</>} pad={false}
+      right={storm ? undefined : <SegmentedControl size="xs" value={String(length)} onChange={(v) => setLength(Number(v))} data={[{ value: "3", label: "3 min" }, { value: "5", label: "5 min" }]} />}>
       {!scores ? <Loader size="xs" m={12} /> : scores.length ? scores.slice(0, 10).map((x, i) => (
         <div key={x.guest} className="listrow" style={{ cursor: "default", fontWeight: x.guest === me ? 800 : undefined }}>
           <Text size="xs" w={20} c="dimmed">{i + 1}</Text>
@@ -258,14 +258,15 @@ function RacePage() {
   const over = race ? race.status === "finished" : runView?.status === "finished" || (!!ends && left <= 0) || myStrikes >= 3;
   const strikes = (n: number) => <Group gap={2}>{[0, 1, 2].map((i) => <IconX key={i} size={13} color={i < n ? "#ff6b6b" : "#555"} stroke={3} />)}</Group>;
   const verdict = race && over && them ? (myScore > them.score ? "You win!" : myScore < them.score ? `${them.name} wins` : "A tie") : undefined;
-  const active = r.kind === "rush" || !!race;
+  const active = r.kind === "rush" || r.kind === "storm" || !!race;
+  const solo = r.kind === "rush" || r.kind === "storm";
 
   return (
     <div className="page">
       <div className="boardcol">
         <div className="toolbar" style={{ margin: "-14px -16px 6px" }}>
           <SegmentedControl value={p.mode} onChange={(m) => { r.leave(); p.setMode(m as PuzzleMode); }}
-            data={[{ value: "rated", label: "Rated" }, { value: "rush", label: "Rush" }, { value: "mistakes", label: "My mistakes" }, { value: "daily", label: "Daily" }, { value: "pack", label: "Packs" }, { value: "battle", label: "Battle" }]} />
+            data={[{ value: "rated", label: "Rated" }, { value: "rush", label: "Rush" }, { value: "mistakes", label: "My mistakes" }, { value: "daily", label: "Daily" }, { value: "pack", label: "Packs" }, { value: "storm", label: "Storm" }, { value: "battle", label: "Battle" }]} />
         </div>
         <div className={"boardrow" + (r.flash === "wrong" ? " shake" : "")}>
           <Board key={runView ? `${runView.id}-${runView.index}` : "idle"} fen={r.fen} orientation={r.userColor} lastMove={r.answer ?? r.lastMove}
@@ -276,7 +277,7 @@ function RacePage() {
         {r.error && <div style={{ padding: "10px 12px 0" }}><Alert color="orange" p="xs" withCloseButton onClose={() => useRace.setState({ error: undefined })}>{r.error}</Alert></div>}
         {active ? (
           <>
-            <Panel title={<>{r.kind === "rush" ? <IconTrophy size={13} /> : <IconSwords size={13} />} {r.kind === "rush" ? "Ranked rush" : "Puzzle battle"} · {r.kind === "rush" ? (runView?.endsAt && runView.startedAt ? Math.round((runView.endsAt - runView.startedAt) / 60000) : minutes) : race?.minutes} min</>}>
+            <Panel title={<>{solo ? <IconTrophy size={13} /> : <IconSwords size={13} />} {r.kind === "storm" ? "Puzzle storm" : r.kind === "rush" ? "Ranked rush" : `Puzzle battle · ${race?.minutes} min`}</>}>
               {race?.status === "waiting" ? (
                 <>
                   <Group gap={8}><Loader size="xs" /><Text fw={700}>Waiting for an opponent</Text></Group>
@@ -297,21 +298,32 @@ function RacePage() {
                     </div>
                   ))}
                 </Group>
-              ) : r.kind === "rush" && (
+              ) : solo && (
                 <div style={{ textAlign: "center", marginTop: 8 }}>
                   <Text fw={800} fz={36} ff="ui-rounded, system-ui" lh={1.1}>{myScore}</Text>
-                  <Group justify="center">{strikes(myStrikes)}</Group>
+                  {r.kind === "storm"
+                    ? <Text size="sm" c={(runView?.combo ?? 0) >= 5 ? "orange" : "dimmed"} fw={700}>{runView?.combo ?? 0} in a row{myStrikes ? ` · ${myStrikes} missed` : ""}</Text>
+                    : <Group justify="center">{strikes(myStrikes)}</Group>}
                 </div>
               )}
-              {!over && myStrikes >= 3 && <Text size="sm" c="dimmed" mt={6} ta="center">Three misses: you're out.</Text>}
+              {!over && r.kind !== "storm" && myStrikes >= 3 && <Text size="sm" c="dimmed" mt={6} ta="center">Three misses: you're out.</Text>}
               {!over && r.flash && <Text size="sm" mt={6} ta="center" c={r.flash === "right" ? "green" : "red"}>{r.flash === "right" ? "Solved" : "Missed: the right move is shown"}</Text>}
-              {!over && !r.flash && runView?.status === "running" && myStrikes < 3 && <Text size="sm" mt={6} ta="center" c="dimmed">{r.userColor === "white" ? "White" : "Black"} to move · puzzle {runView.index + 1}{runView.puzzle ? ` · rated ${runView.puzzle.rating}` : ""}</Text>}
-              {over && r.kind === "rush" && <Text size="sm" mt={6} ta="center">Final score {myScore}. It's on the leaderboard if it's your best.</Text>}
+              {!over && !r.flash && runView?.status === "running" && (r.kind === "storm" || myStrikes < 3) && <Text size="sm" mt={6} ta="center" c="dimmed">{r.userColor === "white" ? "White" : "Black"} to move · puzzle {runView.index + 1}{runView.puzzle ? ` · rated ${runView.puzzle.rating}` : ""}</Text>}
+              {over && solo && <Text size="sm" mt={6} ta="center">Final score {myScore}. It's on the leaderboard if it's your best.</Text>}
             </Panel>
-            {r.kind === "rush" && over && <RushBoard minutes={Number(minutes)} />}
+            {solo && over && <RushBoard minutes={Number(minutes)} storm={r.kind === "storm"} />}
             <div style={{ padding: 12 }}>
-              <Button fullWidth variant="default" onClick={() => r.leave()}>{over ? (r.kind === "rush" ? "Done" : "New battle") : race?.status === "waiting" ? "Cancel" : "Leave"}</Button>
+              <Button fullWidth variant="default" onClick={() => r.leave()}>{over ? (solo ? "Done" : "New battle") : race?.status === "waiting" ? "Cancel" : "Leave"}</Button>
             </div>
+          </>
+        ) : p.mode === "storm" ? (
+          <>
+            <Panel title={<><IconFlame size={13} /> Puzzle storm</>}>
+              <Text size="sm" c="dimmed">Three minutes on one clock. A miss costs ten seconds; solves in a row earn time: +3 s at 5, +5 s at 12, +7 s at 20, and +10 s at 30 and every 10 after. Every move is checked by the server.</Text>
+              <Button mt="sm" fullWidth size="md" leftSection={<IconFlame size={16} />} loading={busy === "storm"} onClick={() => run("storm", () => r.startStorm())}>Start a storm</Button>
+              {!online.ready && <Text size="xs" c={online.error ? "orange" : "dimmed"} mt={6}>{online.error ?? "Connecting to Castle Online…"}</Text>}
+            </Panel>
+            <RushBoard minutes={3} storm />
           </>
         ) : (
           <>

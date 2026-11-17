@@ -1,5 +1,5 @@
 import { variantOf } from "./chess.js";
-import { cleanName, cleanText, daysOf, fail, Handler, json, sql, timeOf } from "./db.js";
+import { cleanName, cleanText, daysOf, fail, Handler, json, ping, sql, timeOf } from "./db.js";
 import { blocked, createGame, GameOptions, load, remember, takeSeat, toMove, verified } from "./game.js";
 import { MUTE_AFTER_REPORTS } from "./moderation.js";
 import { randomId, seal } from "./token.js";
@@ -46,6 +46,7 @@ export const socialRoutes: Record<string, Handler> = {
     const id = randomId();
     await sql`insert into challenges (id, from_guest, from_name, from_rating, to_guest, game_id, code, minutes, increment, rated, variant)
       values (${id}, ${p.id}, ${name}, ${p.rating}, ${to}, ${seat.id}, ${seat.code}, ${o.minutes}, ${o.increment}, ${o.rated}, ${o.variant})`;
+    await ping({ t: "inbox", guest: to });
     return json({ ...seat, challenge: id });
   },
 
@@ -87,11 +88,13 @@ export const socialRoutes: Record<string, Handler> = {
     if (!b.accept) {
       await sql`update challenges set status = 'declined' where id = ${c.id}`;
       await sql`update games set status = 'finished', result = 'aborted', reason = 'declined', updated_at = now() where id = ${c.game_id} and status = 'waiting'`;
+      await ping({ t: "inbox", guest: c.from_guest }, { t: "game", id: c.game_id });
       return json({ ok: true });
     }
     const g = await load(c.game_id);
     const seat = g && g.status === "waiting" ? await takeSeat(g, p, cleanName(b.name)) : undefined;
     await sql`update challenges set status = ${seat ? "accepted" : "expired"} where id = ${c.id}`;
+    await ping({ t: "inbox", guest: c.from_guest });
     return seat ? json(seat) : fail("That challenge was withdrawn.", 409);
   },
 
@@ -123,6 +126,7 @@ export const socialRoutes: Record<string, Handler> = {
     const recent = await sql`select count(*)::int as n from chat where game_id = ${room} and name = ${name} and created_at > now() - interval '10 seconds'`;
     if (recent[0].n >= 6) return fail("Slow down a little.", 429);
     await sql`insert into chat (game_id, name, kind, text, guest) values (${room}, ${name}, ${kind}, ${text}, ${p?.id ?? null})`;
+    await ping({ t: "room", room });
     return json({ ok: true });
   },
 

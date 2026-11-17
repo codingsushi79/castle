@@ -119,6 +119,7 @@ jobs:
     needs: [create-release, build]
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/github-script@v7
         with:
           script: |
@@ -151,6 +152,18 @@ jobs:
             // check (the macOS archives have no version in their names). Pin the links to this release.
             const parsed = JSON.parse((await download(manifest.id)).toString());
             const version = parsed.version;
+
+            // The release notes Castle shows before updating: this version's section of CHANGELOG.md.
+            const log = require('fs').readFileSync('CHANGELOG.md', 'utf8');
+            const section = log.split(/^## /m).find((s) => s.split('\n')[0].trim() === version);
+            parsed.notes = section ? section.split('\n').slice(1).join('\n').trim() : '';
+            const withNotes = Buffer.from(JSON.stringify(parsed, null, 2));
+            await github.rest.repos.deleteReleaseAsset({ owner, repo, asset_id: manifest.id });
+            await github.rest.repos.uploadReleaseAsset({
+              owner, repo, release_id, name: 'latest.json', data: withNotes,
+              headers: { 'content-type': 'application/json' },
+            });
+
             for (const p of Object.values(parsed.platforms)) p.url = p.url.replace('/releases/latest/download/', `/releases/download/v${version}/`);
             const fresh = Buffer.from(JSON.stringify(parsed, null, 2));
 

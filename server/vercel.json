@@ -1,10 +1,22 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "rewrites": [
-    { "source": "/g/:code", "destination": "/api?r=g&id=:code" },
-    { "source": "/api/((?!live$).*)", "destination": "/api" }
+    {
+      "source": "/g/:code",
+      "destination": "/api?r=g&id=:code"
+    },
+    {
+      "source": "/mod",
+      "destination": "/api?r=mod"
+    },
+    {
+      "source": "/api/((?!live$).*)",
+      "destination": "/api"
+    }
   ],
   "functions": {
-    "api/live.ts": { "maxDuration": 300 }
+    "api/live.ts": {
+      "maxDuration": 300
+    }
   }
 }
