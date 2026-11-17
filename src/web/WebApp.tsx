@@ -8,6 +8,8 @@ import { START_FEN } from "../lib/chess";
 import { api, onlineToken, useOnline } from "../lib/online";
 import { load, save } from "../lib/storage";
 import { useStudies } from "../lib/studies";
+import { usePuzzles } from "../lib/puzzles";
+import { useOpenings } from "../lib/openings";
 import { OnlineGame, OnlinePanels } from "../pages/Online";
 import PuzzlesPage from "../pages/Puzzles";
 import StudiesPage from "../pages/Studies";
@@ -95,7 +97,12 @@ export function WebApp() {
   const o = useOnline();
   useHashLinks(setTab);
   useEffect(() => { save("webTab", tab); }, [tab]);
-  useEffect(() => { if (!o.ready) o.start(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!o.ready) o.start();
+    // The desktop app loads these at startup too: puzzles for practice and lessons, openings for names.
+    usePuzzles.getState().load();
+    useOpenings.getState().load();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const p = o.profile;
   return (
     <div className="web-shell">

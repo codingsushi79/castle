@@ -22,5 +22,5 @@ export default defineConfig({
     },
   ],
   build: { outDir: resolve(__dirname, "server/public/play"), emptyOutDir: true, target: "safari15", chunkSizeWarningLimit: 4000 },
-  server: { port: 1430, strictPort: true },
+  server: { port: 1430, strictPort: true, fs: { allow: [__dirname] } },
 });
