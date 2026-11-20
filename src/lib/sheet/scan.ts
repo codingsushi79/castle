@@ -1,4 +1,4 @@
-import { bubble, decodeId, fiducialCentres, GROUPS, Group, ID_BITS, idSquare, MARK_SIDES, markWidth, RESULTS, resultBubble, rowMark, SHEET } from "./layout";
+import { bubble, decodeId, fiducialCentres, GROUPS, Group, ID_BITS, idSquare, MARK_SIDES, markWidth, RESULTS, resultBubble, ROW_MARK, rowCentre, rowMark, SHEET } from "./layout";
 
 /**
  * Sheet2PGN's scanner: finds a Castle scoresheet in a photo or scan and reads
@@ -244,17 +244,6 @@ function discMean(dark: Float32Array, w: number, h: number, x: number, y: number
   return n ? s / n : 0;
 }
 
-/** The dark mark nearest a point, within a window: its centre, or undefined if there's nothing there. */
-function findMark(dark: Float32Array, w: number, h: number, x: number, y: number, rx: number, ry: number): [number, number] | undefined {
-  let s = 0, sx = 0, sy = 0;
-  for (let yy = Math.round(y - ry); yy <= Math.round(y + ry); yy++) for (let xx = Math.round(x - rx); xx <= Math.round(x + rx); xx++) {
-    const d = at(dark, w, h, xx, yy);
-    if (d < 0.4) continue;
-    s += d; sx += d * xx; sy += d * yy;
-  }
-  return s > 2 ? [sx / s, sy / s] : undefined;
-}
-
 /** Which circles of a group are filled, judged against the group's emptiest circles. */
 export function judge(means: number[]): Mark {
   const sorted = [...means].sort((a, b) => a - b);
@@ -270,21 +259,46 @@ export function judge(means: number[]): Mark {
 export function scanPage(img: GrayImage): PageScan {
   const { width: w, height: h } = img;
   const dark = darkness(img);
-  const corners = findCorners(blobs(dark, w, h, 0.45, Math.max(20, Math.round((w * h) / 400000))), w, h);
+  const found = blobs(dark, w, h, 0.45, Math.max(12, Math.round((w * h) / 600000)));
+  const corners = findCorners(found, w, h);
   const toImage = homography(fiducialCentres(), corners);
+  const toSheet = homography(corners, fiducialCentres());
   const [ax, ay] = toImage(0, 0), [bx, by] = toImage(SHEET.width, 0);
   const scale = Math.hypot(bx - ax, by - ay) / SHEET.width;
 
   // Follow each row's marks; between them, shift every circle by the interpolated correction.
-  const shifts: [number, number][][] = [];
-  for (let r = 0; r < SHEET.rows; r++) {
-    shifts.push(MARK_SIDES.map((side) => {
-      const [mx, my] = rowMark(r, side);
-      const [px, py] = toImage(mx, my);
-      const found = findMark(dark, w, h, px, py, scale * (markWidth(side) / 2 + 0.6), scale * 2.2);
-      return found ? [found[0] - px, found[1] - py] : [NaN, NaN];
-    }));
-  }
+  // The marks are found a column at a time, not row by row: a page that bows can move a
+  // mark by more than half a row, and a mark looked for near its own row would then be
+  // its neighbour's. So each column's marks are matched to rows in order, after working
+  // out how far the whole column has moved.
+  const pitch = SHEET.rowHeight;
+  const shifts: [number, number][][] = Array.from({ length: SHEET.rows }, () => MARK_SIDES.map(() => [NaN, NaN] as [number, number]));
+  MARK_SIDES.forEach((side, k) => {
+    const [mx] = rowMark(0, side);
+    const area = markWidth(side) * ROW_MARK.h * scale * scale;
+    const marks = found
+      .filter((b) => b.area > area * 0.35 && b.area < area * 2.5 && b.solidity > 0.6)
+      .map((b) => ({ b, at: toSheet(b.cx, b.cy) }))
+      .filter((m) => Math.abs(m.at[0] - mx) < 1.8 && m.at[1] > SHEET.rowTop - 2 * pitch && m.at[1] < SHEET.rowTop + (SHEET.rows + 2) * pitch);
+    if (!marks.length) return;
+    // The column's shift: the one that lines up the most marks with rows (a whole row too far leaves one over).
+    const near = (o: number) => marks.filter((m) => { const t = (m.at[1] - o - SHEET.rowTop) / pitch - 0.5; const r = Math.round(t); return r >= 0 && r < SHEET.rows && Math.abs(t - r) < 0.35; }).length;
+    let bestO = 0, bestN = -1;
+    for (const m of marks) for (let r = 0; r < SHEET.rows; r++) {
+      const o = m.at[1] - rowCentre(r);
+      if (Math.abs(o) > 2.5 * pitch) continue;
+      const n = near(o);
+      if (n > bestN || (n === bestN && Math.abs(o) < Math.abs(bestO))) { bestN = n; bestO = o; }
+    }
+    for (let r = 0; r < SHEET.rows; r++) {
+      const want = rowCentre(r) + bestO;
+      let pick: (typeof marks)[number] | undefined;
+      for (const m of marks) if (Math.abs(m.at[1] - want) < 0.35 * pitch && (!pick || Math.abs(m.at[1] - want) < Math.abs(pick.at[1] - want))) pick = m;
+      if (!pick) continue;
+      const [px, py] = toImage(...rowMark(r, side));
+      shifts[r][k] = [pick.b.cx - px, pick.b.cy - py];
+    }
+  });
   // A missing mark borrows from the nearest rows that have one.
   for (let k = 0; k < MARK_SIDES.length; k++) {
     for (let r = 0; r < SHEET.rows; r++) {

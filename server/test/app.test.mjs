@@ -264,4 +264,50 @@ const readout = (plies) => plies.map((p) => `${p.read}→${p.san ?? "?"}(${p.sta
   ok(ga.plies[4].status === "ambiguous" && ga.plies[4].options.length === 2, "when two knights can reach the square, both are offered");
 }
 
+{
+  // Marks straight from moves, without a picture: the decoder on its own.
+  const halvesFor = (fen, sans) => {
+    const pos = L.positionOf(fen).clone();
+    const mark = (i) => ({ filled: i === undefined ? [] : [i], faint: [], scores: [] });
+    return sans.map((san) => {
+      const m = L.parseSan(pos, san);
+      const uci = L.uciOf(pos, m, false);
+      const pi = ["king", "queen", "rook", "bishop", "knight"].indexOf(pos.board.get(m.from).role);
+      pos.play(m);
+      return { piece: mark(pi >= 0 ? pi : undefined), file: mark(uci.charCodeAt(2) - 97), rank: mark(Number(uci[3]) - 1), blank: false };
+    });
+  };
+  // Three knights can reach d2, so the move is written Nb3d2: disambiguated by file and rank.
+  // Only 22 and 24 half-moves later, when the f3 and b1 knights each make a move only they
+  // could make, does the game show it was the b3 knight.
+  const start = "k7/8/8/8/8/1N3N2/8/1N4K1 w - - 0 1";
+  const shuffle = Array.from({ length: 10 }, (_, i) => (i % 2 ? ["Ka8", "Kg1"] : ["Kb8", "Kh1"])).flat();
+  const game = ["Nb3d2", ...shuffle, "Kb8", "Nh4", "Ka8", "Na3", "Kb8"];
+  const d = L.decodeGame(halvesFor(start, game), new Map(), start);
+  ok(d.plies[0].san === "Nb3d2" && d.plies[0].status === "inferred" && d.plies[0].options.length === 3,
+    `a doubly disambiguated move is worked out from moves 22 and 24 half-moves later (${d.plies[0].san}, ${d.plies[0].status}, ${d.plies[0].options.map((o) => o.san).join("/")})`);
+  ok(d.plies.map((p) => p.san).join(" ") === game.join(" ") && !d.unfinished, "and the rest of the game reads exactly");
+
+  // Looking back: an early choice the next moves can't settle, revised when a later move doesn't fit.
+  // Both knights can reach d2 (1.d4 d5 2.Nf3 Nf6 3.N?d2); Nfd2 looks just as good for twenty moves, until the
+  // b1 knight is gone and only the f3 knight could play to h4.
+  const s2 = "rnbqkbnr/ppp1pppp/8/3p4/3P4/5N2/PPP1PPPP/RNBQKB1R w KQkq - 0 2";
+  const g2 = ["Nf6", "Nbd2", ...Array.from({ length: 9 }, (_, i) => (i % 2 ? ["Rh8", "Rh1"] : ["Rg8", "Rg1"])).flat(), "Rh8", "Nh4"];
+  const d2 = L.decodeGame(halvesFor(s2.replace(" w ", " b "), g2), new Map(), s2.replace(" w ", " b "));
+  ok(d2.plies[1].san === "Nbd2" && d2.plies[1].status === "inferred" && d2.plies.at(-1).san === "Nh4",
+    `a later move that only fits one reading goes back and settles the earlier choice (${d2.plies[1].san}, ${d2.plies[1].status})`);
+
+  // A long game decodes quickly.
+  const long = globalThis.longGame = "e4 e5 Nf3 Nc6 Bb5 a6 Ba4 Nf6 O-O Be7 Re1 b5 Bb3 d6 c3 O-O h3 Nb8 d4 Nbd7 c4 c6 cxb5 axb5 Nc3 Bb7 Bg5 b4 Nb1 h6 Bh4 c5 dxe5 Nxe4 Bxe7 Qxe7 exd6 Qf6 Nbd2 Nxd6 Nc4 Nxc4 Bxc4 Nb6 Ne5 Rae8 Bxf7+ Rxf7 Nxf7 Rxe1+ Qxe1 Kxf7 Qe3 Qg5 Qxg5 hxg5 b3 Ke6 a3 Kd6 axb4 cxb4 Ra5 Nd5 f3 Bc8 Kf2 Bf5 Ra7 g6 Ra6+ Kc5 Ke1 Nf4 g3 Nxh3 Kd2 Kb5 Rd6 Kc5 Ra6 Nf2 g4 Bd3 Re6".split(" ");
+  const t0 = Date.now();
+  const d3 = L.decodeGame(halvesFor(L.START_FEN, long));
+  ok(d3.plies.map((p) => p.san).join(" ") === long.join(" "), `an 85-half-move game decodes exactly (${Date.now() - t0} ms)`);
+
+  // The same game on one page: 43 of its 50 rows, photographed at an angle, bowed and shadowed.
+  const page = photograph(marksFor(long), { width: 1500, height: 2000, corners: [[190, 150], [1340, 210], [1400, 1880], [100, 1840]], curl: 14, shade: 0.4, noise: 25, seed: 9 });
+  const ps = L.scanPage(page);
+  const pg = L.decodeGame(halvesOf(ps));
+  ok(layout.SHEET.rows === 50 && sanList(pg.plies) === long.join(" "), `a 43-move game fits one page and scans back exactly${sanList(pg.plies) === long.join(" ") ? "" : `: ${readout(pg.plies).slice(0, 400)}`}`);
+}
+
 done();

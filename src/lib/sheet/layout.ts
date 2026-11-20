@@ -13,15 +13,16 @@
 export const SHEET = {
   width: 190,
   height: 262,
-  rows: 35,
-  rowTop: 33,
-  rowHeight: 6.1,
+  /** 50 moves a page: enough for almost every game on one sheet. */
+  rows: 50,
+  rowTop: 26,
+  rowHeight: 4.5,
   /** The corner squares the scanner finds first. The bottom-right one is hollow, which shows which way up the page is. */
   fiducial: 7,
   hole: 3.5,
-  pitch: 3.25,
-  radius: 1.35,
-  handWidth: 15,
+  pitch: 2.9,
+  radius: 1.15,
+  handWidth: 20,
 };
 
 export const PIECES = ["K", "Q", "R", "B", "N"] as const;
@@ -42,7 +43,7 @@ export function fiducialCentres(): [number, number][] {
 }
 
 const NUMBER_WIDTH = 9.5;
-const GROUP_GAP = 1.2;
+const GROUP_GAP = 1.0;
 const groupWidth = (n: number) => n * SHEET.pitch;
 const BLOCK = SHEET.handWidth + 0.8 + groupWidth(5) + GROUP_GAP + groupWidth(8) + GROUP_GAP + groupWidth(8);
 
@@ -71,21 +72,21 @@ export function bubble(row: number, color: "white" | "black", group: Group, inde
  */
 export type MarkSide = "left" | "middle" | "right";
 export const MARK_SIDES: MarkSide[] = ["left", "middle", "right"];
-export const ROW_MARK = { w: 2.4, h: 1.6, middleW: 1.4 };
+export const ROW_MARK = { w: 2.4, h: 1.4, middleW: 1.4 };
 export const markWidth = (side: MarkSide) => (side === "middle" ? ROW_MARK.middleW : ROW_MARK.w);
 export const rowMark = (row: number, side: MarkSide): [number, number] =>
   [side === "left" ? ROW_MARK.w / 2 : side === "right" ? SHEET.width - ROW_MARK.w / 2 : NUMBER_WIDTH + BLOCK + MIDDLE_GAP / 2, rowCentre(row)];
 
 /** The result circles. */
-export const resultBubble = (i: number): [number, number] => [158 + i * 9.5, 22.2];
+export const resultBubble = (i: number): [number, number] => [151 + i * 11, 17.9];
 
 /** Header fields written by hand, shown beside the scan so they can be typed in. */
 export const FIELDS: { tag: string; label: string; x: number; y: number; w: number; h: number }[] = [
-  { tag: "White", label: "White", x: 9.5, y: 11, w: 84, h: 7 },
-  { tag: "Black", label: "Black", x: 99, y: 11, w: 84, h: 7 },
-  { tag: "Event", label: "Event", x: 9.5, y: 19.5, w: 66, h: 6 },
-  { tag: "Date", label: "Date", x: 79, y: 19.5, w: 34, h: 6 },
-  { tag: "Round", label: "Round", x: 116, y: 19.5, w: 17, h: 6 },
+  { tag: "White", label: "White", x: 9.5, y: 9, w: 84, h: 5.6 },
+  { tag: "Black", label: "Black", x: 99, y: 9, w: 84, h: 5.6 },
+  { tag: "Event", label: "Event", x: 9.5, y: 15.4, w: 66, h: 5 },
+  { tag: "Date", label: "Date", x: 79, y: 15.4, w: 34, h: 5 },
+  { tag: "Round", label: "Round", x: 116, y: 15.4, w: 17, h: 5 },
 ];
 
 /**
@@ -135,8 +136,8 @@ export function sheetSvg(opts: { sheet: number; page: number; headers?: Record<s
   out.push(`<path d="M${br[0] - S.fiducial / 2} ${br[1] - S.fiducial / 2}h${S.fiducial}v${S.fiducial}h${-S.fiducial}z M${br[0] - S.hole / 2} ${br[1] - S.hole / 2}v${S.hole}h${S.hole}v${-S.hole}z" fill="${ink}" fill-rule="evenodd"/>`);
 
   // Title and identity.
-  text(9.5, 5.2, 4.2, "Castle scoresheet", `font-weight="bold"`);
-  text(9.5, 8.6, 2.4, `Sheet2PGN · page ${page} · moves ${firstMoveOf(page)}–${firstMoveOf(page) + S.rows - 1} · sheet ${sheet}`, `fill="#555"`);
+  text(9.5, 4.4, 3.6, "Castle scoresheet", `font-weight="bold"`);
+  text(9.5, 7.4, 2.1, `Sheet2PGN · page ${page} · moves ${firstMoveOf(page)}–${firstMoveOf(page) + S.rows - 1} · sheet ${sheet}`, `fill="#555"`);
   encodeId(sheet, page).forEach((bit, i) => {
     const [x, y] = idSquare(i);
     out.push(`<rect x="${x - ID_SIZE / 2}" y="${y - ID_SIZE / 2}" width="${ID_SIZE}" height="${ID_SIZE}" fill="${bit ? ink : "none"}" stroke="${bit ? "none" : light}" stroke-width="0.2"/>`);
@@ -145,26 +146,26 @@ export function sheetSvg(opts: { sheet: number; page: number; headers?: Record<s
   // Header fields.
   for (const f of FIELDS) {
     out.push(`<rect x="${f.x}" y="${f.y}" width="${f.w}" height="${f.h}" fill="none" stroke="#777" stroke-width="0.25" rx="0.6"/>`);
-    text(f.x + 0.8, f.y + 2.1, 1.8, f.label, `fill="#777"`);
+    text(f.x + 0.8, f.y + 1.8, 1.6, f.label, `fill="#777"`);
     const v = opts.headers?.[f.tag];
-    if (v) text(f.x + 2, f.y + f.h - 1.3, f.h > 6.5 ? 3.6 : 3.1, v);
+    if (v) text(f.x + 2, f.y + f.h - 1.0, f.h > 5.3 ? 3.2 : 2.8, v);
   }
-  text(140, 21.4, 2, "Result", `fill="#777"`);
+  text(136, 18.6, 1.9, "Result", `fill="#777"`);
   RESULTS.forEach((r, i) => {
     const [x, y] = resultBubble(i);
     out.push(`<circle cx="${x}" cy="${y}" r="${S.radius + 0.2}" fill="none" stroke="${light}" stroke-width="0.22"/>`);
-    text(x, y + 3.7, 1.9, r === "1/2-1/2" ? "½-½" : r, `fill="#777" text-anchor="middle"`);
+    text(x + S.radius + 0.9, y + 0.7, 1.9, r === "1/2-1/2" ? "½-½" : r, `fill="#777"`);
   });
 
   // Column headings.
   for (const color of ["white", "black"] as const) {
     const hb = handBox(0, color);
-    text(hb.x, S.rowTop - 2.6, 2.6, color === "white" ? "White" : "Black", `font-weight="bold"`);
+    text(hb.x, S.rowTop - 1.0, 2.4, color === "white" ? "White" : "Black", `font-weight="bold"`);
     for (const { group, labels } of GROUPS) {
       const [x0] = bubble(0, color, group, 0);
       const [x1] = bubble(0, color, group, labels.length - 1);
-      text((x0 + x1) / 2, S.rowTop - 3.6, 1.7, group === "piece" ? "piece" : group === "file" ? "to file" : "to rank", `fill="#777" text-anchor="middle"`);
-      labels.forEach((l, i) => text(bubble(0, color, group, i)[0], S.rowTop - 0.9, 1.9, l, `fill="#555" text-anchor="middle"`));
+      text((x0 + x1) / 2, S.rowTop - 3.1, 1.5, group === "piece" ? "piece" : group === "file" ? "to file" : "to rank", `fill="#777" text-anchor="middle"`);
+      labels.forEach((l, i) => text(bubble(0, color, group, i)[0], S.rowTop - 0.8, 1.6, l, `fill="#555" text-anchor="middle"`));
     }
   }
 
@@ -177,7 +178,7 @@ export function sheetSvg(opts: { sheet: number; page: number; headers?: Record<s
       const mw = markWidth(side);
       out.push(`<rect x="${x - mw / 2}" y="${cy - ROW_MARK.h / 2}" width="${mw}" height="${ROW_MARK.h}" fill="${ink}"/>`);
     }
-    text(NUMBER_WIDTH - 1.2, rowCentre(r) + 1.1, 2.9, String(firstMoveOf(page) + r), `text-anchor="end" font-weight="bold"`);
+    text(NUMBER_WIDTH - 1.2, rowCentre(r) + 0.85, 2.4, String(firstMoveOf(page) + r), `text-anchor="end" font-weight="bold"`);
     for (const color of ["white", "black"] as const) {
       const hb = handBox(r, color);
       out.push(`<rect x="${hb.x}" y="${hb.y}" width="${hb.w}" height="${hb.h}" fill="none" stroke="#999" stroke-width="0.2" rx="0.5"/>`);
@@ -185,7 +186,7 @@ export function sheetSvg(opts: { sheet: number; page: number; headers?: Record<s
         labels.forEach((l, i) => {
           const [cx, cy] = bubble(r, color, group, i);
           out.push(`<circle cx="${cx}" cy="${cy}" r="${S.radius}" fill="none" stroke="${light}" stroke-width="0.2"/>`);
-          out.push(`<text x="${cx}" y="${cy + 0.62}" font-size="1.7" font-family="Helvetica, Arial, sans-serif" fill="#bbb" text-anchor="middle">${l}</text>`);
+          out.push(`<text x="${cx}" y="${cy + 0.52}" font-size="1.45" font-family="Helvetica, Arial, sans-serif" fill="#bbb" text-anchor="middle">${l}</text>`);
         });
       }
     }
@@ -193,10 +194,9 @@ export function sheetSvg(opts: { sheet: number; page: number; headers?: Record<s
   }
 
   // How to fill it in.
-  const foot = S.rowTop + S.rows * S.rowHeight + 3.2;
-  text(9.5, foot, 2.2, "Write each move in its box, then fill three circles with a dark pen: the piece that moved (none for a pawn), and the file and rank of the square it moved to.");
-  text(9.5, foot + 3.2, 2.2, "Castling: K and the king's new square (g1, c1, g8 or c8). Promotion: just the square; Castle asks which piece. Leave the rest blank when the game ends.");
-  text(9.5, foot + 6.4, 2.2, "Then scan or photograph the page in Castle (Sheet2PGN). Keep the four corner squares in the picture.", `fill="#555"`);
+  const foot = S.rowTop + S.rows * S.rowHeight + 2.4;
+  text(9.5, foot, 1.9, "Write each move in its box, then fill three circles with a dark pen: the piece that moved (none for a pawn), and the file and rank of its new square.");
+  text(9.5, foot + 2.6, 1.9, "Castling: K and the king's new square (g1, c1, g8 or c8). Promotion: just the square. Leave the rest blank when the game ends. Scan it in Castle (Sheet2PGN).", `fill="#555"`);
 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${S.width}mm" height="${S.height}mm" viewBox="0 0 ${S.width} ${S.height}">${out.join("")}</svg>`;
 }

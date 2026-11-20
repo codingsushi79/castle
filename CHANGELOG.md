@@ -1,5 +1,15 @@
 # Castle changelog
 
+## 2.4.0-2
+
+The second beta of Castle 2.4.
+
+### Sheet2PGN
+- **50 moves on a page:** the scoresheet is more compact, with wider boxes for writing moves, so most games fit on one sheet.
+- **Better at telling pieces apart:** when the circles fit more than one move (two or three knights, rooks or queens that can reach the same square, even the moves written like Nb3d2), Castle now uses the whole game to decide, however many moves later the answer shows up, and goes back to change an earlier choice when a later move doesn't fit.
+- Pages that aren't quite flat are read more reliably.
+- Sheets printed from the first beta have a different layout: print new ones.
+
 ## 2.4.0-1
 
 The first beta of Castle 2.4: coaches, opponents that play at their real rating, and Sheet2PGN.
