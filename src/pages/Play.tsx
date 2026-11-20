@@ -4,10 +4,13 @@ import { useEffect, useState } from "react";
 import { Board } from "../components/Board";
 import { MoveList, NavBar, Panel, PlayerStrip } from "../components/common";
 import { Color, materialBalance, START_FEN, variantName, VARIANTS } from "../lib/chess";
-import { available, entryOf, useEngines } from "../lib/engines";
+import { available, entryOf, resolveEngine, useEngines } from "../lib/engines";
 import { openingFor, useOpenings } from "../lib/openings";
-import { downloadMaia, installedMaia, MAIA_LEVELS, PERSONALITIES } from "../lib/personalities";
-import { hasClock, usePlay } from "../lib/play";
+import { COACHES, downloadMaia, installedMaia, MAIA_LEVELS, OPPONENTS, PERSONALITIES } from "../lib/personalities";
+import { hasClock, modelEngineOf, personaEngine, personaRange, usePlay } from "../lib/play";
+import { courseById } from "../lib/courses";
+import { eloRange } from "../lib/strength";
+import { Avatar, CoachChat } from "../components/CoachChat";
 import { useOnline } from "../lib/online";
 import { useApp, useTree } from "../lib/store";
 import { OnlineGame, OnlinePanels } from "./Online";
@@ -40,50 +43,91 @@ function Setup() {
   const [dlError, setDlError] = useState<string>();
   useEffect(() => { installedMaia().then(setMaia); }, []);
   const lc0 = !!entryOf("lc0")?.path;
-  const persona = PERSONALITIES.find((x) => x.id === p.personaId) ?? PERSONALITIES[3];
+  const persona = PERSONALITIES.find((x) => x.id === p.personaId) ?? PERSONALITIES.find((x) => x.id === "amara")!;
+  const coachRange = personaRange();
   const online = p.opponent === "online";
+  const courseSide = persona.coach && p.courseId ? courseById(p.courseId)?.side : undefined;
   const preview = online ? START_FEN : p.customStart?.fen ?? (p.rules === "chess" ? START_FEN : undefined);
 
   return (
     <div className="page">
       <div className="boardcol">
         <div className="boardrow">
-          <Board key={p.rules + (p.customStart?.fen ?? "") + online} fen={preview ?? START_FEN} rules={online ? "chess" : p.customStart?.rules ?? "chess"} orientation={!online && p.side === "black" ? "black" : "white"} />
+          <Board key={p.rules + (p.customStart?.fen ?? "") + online} fen={preview ?? START_FEN} rules={online ? "chess" : p.customStart?.rules ?? "chess"} orientation={!online && (courseSide ?? p.side) === "black" ? "black" : "white"} />
         </div>
       </div>
       <div className="sidecol wide stagger">
         <Panel title="Opponent">
           <SegmentedControl fullWidth value={p.opponent} onChange={(v) => p.patch({ opponent: v as any })}
             data={[{ value: "engine", label: "Engine" }, { value: "persona", label: "Personality" }, { value: "human", label: "Human here" }, { value: "online", label: "Online" }]} />
-          {p.opponent === "engine" && (
-            <>
-              <Select mt={8} label="Engine" value={p.engineId} onChange={(v) => v && p.patch({ engineId: v })} data={available().map((e) => ({ value: e.id, label: e.name }))} />
-              <Switch mt={10} label="Limit playing strength" checked={p.limit} onChange={(e) => p.patch({ limit: e.currentTarget.checked })} />
-              {p.limit && (
-                <Group mt={6} gap={10} wrap="nowrap">
-                  <Slider style={{ flex: 1 }} min={600} max={2800} step={50} value={p.elo} onChange={(v) => p.patch({ elo: v })} label={null} />
-                  <Text fw={700} w={40} ta="right">{p.elo}</Text>
-                </Group>
-              )}
-            </>
-          )}
+          {p.opponent === "engine" && (() => {
+            const [lo, hi] = eloRange(modelEngineOf(resolveEngine(p.engineId)));
+            return (
+              <>
+                <Select mt={8} label="Engine" value={p.engineId} onChange={(v) => v && p.patch({ engineId: v })} data={available().map((e) => ({ value: e.id, label: e.name }))} />
+                <Switch mt={10} label="Limit playing strength" checked={p.limit} onChange={(e) => p.patch({ limit: e.currentTarget.checked })} />
+                {p.limit && (
+                  <>
+                    <Group mt={6} gap={10} wrap="nowrap">
+                      <Slider style={{ flex: 1 }} min={lo} max={hi} step={25} value={Math.min(hi, Math.max(lo, p.elo))} onChange={(v) => p.patch({ elo: v })} label={null} />
+                      <Text fw={700} w={40} ta="right">{Math.min(hi, Math.max(lo, p.elo))}</Text>
+                    </Group>
+                    <Text size="xs" c="dimmed" mt={2}>Measured in games against Stockfish at known ratings, so the number means what it says.</Text>
+                  </>
+                )}
+              </>
+            );
+          })()}
           {p.opponent === "persona" && (
             <>
-              <div style={{ marginTop: 8, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
-                {PERSONALITIES.map((x) => (
-                  <div key={x.id} className="pressable" onClick={() => p.patch({ personaId: x.id })}
-                    style={{ padding: "6px 9px", borderRadius: 6, background: x.id === p.personaId ? "var(--mantine-primary-color-filled)" : "var(--bg-raised)" }}>
-                    <Text fw={700} size="sm">{x.name} <span style={{ opacity: 0.7, fontWeight: 400 }}>{x.rating >= 3000 ? "max" : x.rating}</span></Text>
-                    <Text size="xs" style={{ opacity: 0.75 }}>{x.style}</Text>
+              <div className="persona-grid">
+                {OPPONENTS.map((x) => (
+                  <div key={x.id} className={"persona-card pressable" + (x.id === p.personaId ? " on" : "")} onClick={() => p.patch({ personaId: x.id, courseId: "" })}>
+                    <Avatar p={x} size={30} />
+                    <div style={{ minWidth: 0 }}>
+                      <Text fw={700} size="sm" truncate>{x.name} <span style={{ opacity: 0.7, fontWeight: 400 }}>{x.rating >= 3000 ? "max" : x.rating}</span></Text>
+                      <Text size="xs" style={{ opacity: 0.75 }} truncate>{x.style}</Text>
+                    </div>
                   </div>
                 ))}
               </div>
-              <Text size="sm" mt={8}>{persona.blurb}</Text>
+              <Text size="xs" fw={700} c="dimmed" mt={12} tt="uppercase">Coaches</Text>
+              <div className="persona-grid">
+                {COACHES.map((x) => (
+                  <div key={x.id} className={"persona-card pressable" + (x.id === p.personaId ? " on" : "")} onClick={() => p.patch({ personaId: x.id, courseId: "" })}>
+                    <Avatar p={x} size={30} />
+                    <div style={{ minWidth: 0 }}>
+                      <Text fw={700} size="sm" truncate>{x.name}</Text>
+                      <Text size="xs" style={{ opacity: 0.75 }} truncate>{x.coach!.title}</Text>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <Text size="sm" mt={10}>{persona.blurb}</Text>
+              {persona.coach ? (
+                <>
+                  <Text size="sm" fw={500} mt={10}>{persona.name} plays at</Text>
+                  <Group gap={10} wrap="nowrap">
+                    <Slider style={{ flex: 1 }} min={coachRange[0]} max={coachRange[1]} step={50} value={Math.min(coachRange[1], Math.max(coachRange[0], p.coachElo))} onChange={(v) => p.patch({ coachElo: v })} label={null} />
+                    <Text fw={700} w={40} ta="right">{Math.min(coachRange[1], Math.max(coachRange[0], p.coachElo))}</Text>
+                  </Group>
+                  <Select mt={8} label="Practise an opening" value={p.courseId || "none"} onChange={(v) => p.patch({ courseId: !v || v === "none" ? "" : v })}
+                    data={[{ value: "none", label: "No, just play" }, ...persona.coach.courses.map((id) => ({ value: id, label: `${courseById(id)?.name} (as ${courseById(id)?.side === "white" ? "White" : "Black"})` }))]} />
+                  {p.courseId && <Text size="xs" c="dimmed" mt={4}>You play {courseById(p.courseId)?.side === "white" ? "White" : "Black"}, and {persona.name} follows the course's lines. Learn them first in Coaches.</Text>}
+                </>
+              ) : (
+                <Text size="xs" c={persona.rating < 3000 && (persona.rating > coachRange[1] || persona.rating < coachRange[0]) ? "orange" : "dimmed"} mt={4}>
+                  {persona.rating >= 3000 ? "No limit at all."
+                    : persona.rating > coachRange[1] || persona.rating < coachRange[0]
+                      ? `Rated ${persona.rating}, but with ${personaEngine(persona.rating)?.name ?? "this engine"} plays at about ${Math.round(Math.min(coachRange[1], Math.max(coachRange[0], persona.rating)))}. Install Stockfish on the Engines page for the full range.`
+                    : `Plays at ${persona.rating}, measured in games against Stockfish at known ratings.`}
+                </Text>
+              )}
               {persona.maia && (
                 maia.includes(persona.maia) && lc0 ? (
-                  <Text size="xs" c="dimmed" mt={4}>Plays with the Maia {persona.maia} network, trained on human games at this level.</Text>
+                  <Text size="xs" c="dimmed" mt={4}>Picks human-like moves with the Maia {persona.maia} network, trained on human games.</Text>
                 ) : !lc0 ? (
-                  <Text size="xs" c="dimmed" mt={4}>Install Leela Chess Zero on the Engines page for human-like play. Until then this opponent is a rating-limited engine.</Text>
+                  <Text size="xs" c="dimmed" mt={4}>Install Leela Chess Zero on the Engines page for more human-like move choices.</Text>
                 ) : (
                   <Group mt={6} gap={8}>
                     <Button variant="light" leftSection={<IconDownload size={14} />} loading={!!dl && dl.done < dl.total}
@@ -96,11 +140,12 @@ function Setup() {
               )}
               {dl && dl.total > 0 && dl.done < dl.total && <Progress mt={6} value={(dl.done / dl.total) * 100} size="sm" animated />}
               {dlError && <Text size="xs" c="red" mt={4}>{dlError}</Text>}
+              <Switch mt={10} label="Talk during the game" description={persona.coach ? "Comments on your moves, explains theirs, and gives hints" : "Comments on the game as it goes"} checked={p.talk} onChange={(e) => p.patch({ talk: e.currentTarget.checked })} />
             </>
           )}
         </Panel>
         {online && <OnlinePanels />}
-        {!online && p.opponent !== "human" && (
+        {!online && p.opponent !== "human" && !courseSide && (
           <Panel title="Play as">
             <SegmentedControl fullWidth value={p.side} onChange={(v) => p.patch({ side: v as any })} data={[{ value: "white", label: "White" }, { value: "black", label: "Black" }, { value: "random", label: "Random" }]} />
           </Panel>
@@ -177,8 +222,9 @@ function Game() {
   const atEnd = tree.current === live;
   const movable = p.phase === "playing" && atEnd && !p.thinking ? (p.opponent === "human" ? "both" : p.humanColor) : undefined;
   const name = (c: Color) => (p.opponent === "human" ? (c === "white" ? "White" : "Black") : c === p.humanColor ? "You" : p.opponentName);
+  const detail = (c: Color) => (p.opponent !== "human" && c !== p.humanColor && p.opponentElo ? String(Math.round(p.opponentElo)) : undefined);
   const strip = (c: Color) => (
-    <PlayerStrip name={name(c)} color={c} clock={hasClock(p) ? p.clocks[c] : undefined} active={p.phase === "playing" && live.turn === c}
+    <PlayerStrip name={name(c)} color={c} detail={detail(c)} clock={hasClock(p) ? p.clocks[c] : undefined} active={p.phase === "playing" && live.turn === c}
       material={c === "white" ? Math.max(0, balance) : Math.max(0, -balance)} />
   );
   void hasClock;
@@ -189,7 +235,8 @@ function Game() {
       <div className="boardcol">
         {strip(top)}
         <div className={"boardrow" + (app.settings.blindfold && p.phase === "playing" ? " blindfold" : "")}>
-          <Board fen={tree.fen} rules={tree.rules} chess960={tree.chess960} orientation={bottom} movable={movable} lastMove={tree.current.lastMove} onMove={(m) => p.humanMove(m)} />
+          <Board fen={tree.fen} rules={tree.rules} chess960={tree.chess960} orientation={bottom} movable={movable} lastMove={tree.current.lastMove} onMove={(m) => p.humanMove(m)}
+            hint={atEnd ? p.hint?.square : undefined} arrows={atEnd && p.hint?.arrow ? [{ from: p.hint.arrow[0], to: p.hint.arrow[1], color: "green" }] : undefined} />
         </div>
         {strip(bottom)}
       </div>
@@ -214,6 +261,7 @@ function Game() {
           {opening && <Text size="xs" c="dimmed" mt={4} truncate>{opening.name}</Text>}
           {tree.rules !== "chess" && <Text size="xs" c="dimmed">{variantName(tree.rules)}</Text>}
         </Panel>
+        {p.persona && <CoachChat />}
         <Panel grow pad={false}><MoveList tree={tree} editable={false} /></Panel>
         <div style={{ padding: 12, display: "flex", flexDirection: "column", gap: 8 }}>
           <NavBar tree={tree} />

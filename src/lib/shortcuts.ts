@@ -25,6 +25,8 @@ export const SHORTCUTS: ShortcutDef[] = [
   { id: "go.training", label: "Go to Training", group: "Pages", keys: "mod+8", global: true },
   { id: "go.repertoire", label: "Go to Repertoire", group: "Pages", keys: "mod+9", global: true },
   { id: "go.progress", label: "Go to Progress", group: "Pages", keys: "" },
+  { id: "go.coaches", label: "Go to Coaches", group: "Pages", keys: "" },
+  { id: "go.scan", label: "Go to Sheet2PGN", group: "Pages", keys: "" },
   { id: "go.online", label: "Play online", group: "Pages", keys: "mod+0", global: true },
   { id: "go.library", label: "Go to Library", group: "Pages", keys: "mod+l", global: true },
   { id: "go.accounts", label: "Go to Accounts", group: "Pages", keys: "" },
@@ -156,7 +158,12 @@ export function installShortcutListener() {
       return;
     }
     const target = e.target as HTMLElement;
-    const typing = target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable;
+    // Only typing in a text field holds shortcuts back. Radio buttons (segmented controls),
+    // checkboxes and switches take focus when clicked, and shouldn't swallow the keyboard;
+    // the arrow keys are still theirs, since radios and sliders move with them.
+    const type = target.tagName === "INPUT" ? (target as HTMLInputElement).type : "";
+    const textField = (target.tagName === "INPUT" && !["radio", "checkbox", "range", "button", "submit", "color", "file"].includes(type)) || target.tagName === "TEXTAREA" || target.tagName === "SELECT" || target.isContentEditable;
+    const typing = textField || (["radio", "range"].includes(type) && /^arrow/.test(combo));
     const { keysFor } = useShortcuts.getState();
     for (const d of SHORTCUTS) {
       if (keysFor(d.id) !== combo) continue;

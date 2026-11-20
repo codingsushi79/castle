@@ -307,6 +307,11 @@ const myTurnBefore = new Set<string>();
 let peer: RTCPeerConnection | undefined;
 let channel: RTCDataChannel | undefined;
 let signalAfter = 0;
+/** Relayed chat lines already shown, by signal id: the same line can come in twice. */
+const heardChat = new Set<number>();
+/** Where reading relayed chat has got to: separate from the connection signals' reader, so neither skips the other's. */
+let relayChatAfter = 0;
+let relayFetching = false;
 let roomAfter = 0;
 let roomGame = "";
 let misses = 0;
@@ -414,7 +419,8 @@ export const useOnline = create<State>((set, get) => {
       else if (m.t === "room" && Array.isArray(m.lines)) {
         if (m.room === get().game?.id) set({ room: mergeRoom(get().room, m.lines) });
         else if (m.room.startsWith("arena:") || m.room.startsWith("swiss:")) set({ tourRoom: mergeRoom(get().tourRoom, m.lines) });
-      } else if (m.t === "inbox") inboxTick();
+      } else if (m.t === "say" && m.id === get().seat?.id) fetchRelayChat();
+      else if (m.t === "inbox") inboxTick();
       else if (m.t === "study" && typeof m.id === "string") for (const fn of studyListeners) fn(m.id);
     };
     ws.onclose = () => {
@@ -465,6 +471,8 @@ export const useOnline = create<State>((set, get) => {
     const g0 = get().game;
     poll = setInterval(() => {
       fetchGame();
+      // Relayed chat comes with a nudge on the live socket; without one, look for it here.
+      if (get().link === "relay" && !get().liveSocket) fetchRelayChat();
       const g = get().game;
       if (g?.status === "finished" && g.rematch && get().seat) clearInterval(poll);
     }, g0?.days ? 15000 : get().liveSocket ? 4000 : fast ? 1000 : 3000);
@@ -491,6 +499,31 @@ export const useOnline = create<State>((set, get) => {
     };
     tick();
     roomPoll = setInterval(tick, 2500);
+  };
+
+  /** A chat line from the opponent, however it came. */
+  const heard = (text: string) => {
+    const seat = get().seat;
+    if (!seat) return;
+    const from: Color = seat.color === "white" ? "black" : "white";
+    set({ chat: [...get().chat, { from, text: text.slice(0, 300) }].slice(-200) });
+  };
+
+  /** Chat lines waiting for us on the server, when there's no direct link to carry them. */
+  const fetchRelayChat = async () => {
+    const s = get().seat;
+    if (!s || relayFetching) return;
+    relayFetching = true;
+    try {
+      const r = await api<{ signals: { id: number; body: any }[] }>(`signal?id=${encodeURIComponent(s.id)}&key=${encodeURIComponent(s.key)}&after=${relayChatAfter}`);
+      if (get().seat?.id !== s.id) return;
+      for (const { id, body } of r.signals) {
+        relayChatAfter = Math.max(relayChatAfter, id);
+        if (body?.t === "chat" && typeof body.text === "string" && !heardChat.has(id)) { heardChat.add(id); heard(body.text); }
+      }
+    } catch { /* the next nudge or poll tries again */ } finally {
+      relayFetching = false;
+    }
   };
 
   const closePeer = () => {
@@ -524,8 +557,7 @@ export const useOnline = create<State>((set, get) => {
       set({ game: { ...g, moves: [...g.moves, m.uci], ply: g.ply + 1, clocks, running: true, drawOffer: g.drawOffer === mover ? g.drawOffer : null }, receivedAt: Date.now() });
       tryPremove();
     } else if (m.t === "chat" && typeof m.text === "string") {
-      const from: Color = seat.color === "white" ? "black" : "white";
-      set({ chat: [...get().chat, { from, text: m.text.slice(0, 300) }].slice(-200) });
+      heard(m.text);
     } else if (m.t === "sync") {
       fetchGame();
     }
@@ -573,6 +605,9 @@ export const useOnline = create<State>((set, get) => {
           } else if (body.ice) {
             if (pc.remoteDescription) await pc.addIceCandidate(body.ice);
             else pendingIce.push(body.ice);
+          } else if (body.t === "chat" && typeof body.text === "string" && !heardChat.has(id)) {
+            heardChat.add(id);
+            heard(body.text);
           }
         } catch { /* a stale signal from an earlier attempt */ }
       }
@@ -584,6 +619,8 @@ export const useOnline = create<State>((set, get) => {
 
   const sit = (seat: Seat) => {
     closePeer();
+    heardChat.clear();
+    relayChatAfter = 0;
     save("onlineSeat", seat);
     set({ seat, game: undefined, chat: [], room: [], link: "connecting", premove: undefined });
     api<GameView>(`game?id=${encodeURIComponent(seat.id)}&key=${encodeURIComponent(seat.key)}`).then((v) => {
@@ -936,9 +973,16 @@ export const useOnline = create<State>((set, get) => {
     say: (text) => {
       const seat = get().seat;
       const t = text.trim().slice(0, 300);
-      if (!t || !seat || channel?.readyState !== "open") return;
-      channel.send(JSON.stringify({ t: "chat", text: t }));
-      set({ chat: [...get().chat, { from: seat.color, text: t }].slice(-200) });
+      if (!t || !seat) return;
+      if (channel?.readyState === "open") {
+        channel.send(JSON.stringify({ t: "chat", text: t }));
+        set({ chat: [...get().chat, { from: seat.color, text: t }].slice(-200) });
+        return;
+      }
+      // No direct link: through the server, which filters it the way it filters room chat.
+      api<{ text: string }>("say", { id: seat.id, key: seat.key, text: t, token: token(), name: get().name })
+        .then((r) => set({ chat: [...get().chat, { from: seat.color, text: r.text }].slice(-200) }))
+        .catch((e) => set({ error: e.message }));
     },
     sayToRoom: async (text, kind = "text") => {
       const g = get().game;

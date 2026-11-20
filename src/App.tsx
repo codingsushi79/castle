@@ -2,7 +2,7 @@ import { Tooltip } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import {
   IconActivity, IconBolt, IconBook2, IconBooks, IconChartLine, IconCpu, IconDeviceTv, IconFlag, IconPuzzle, IconSettings,
-  IconTarget, IconTrophy, IconUserCircle, IconWorld, IconDatabase, IconCommand, IconNotebook,
+  IconTarget, IconTrophy, IconUserCircle, IconWorld, IconDatabase, IconCommand, IconNotebook, IconSchool, IconScan,
 } from "@tabler/icons-react";
 import { ReactNode, useEffect, useState } from "react";
 import { CheatSheet, CommandPalette, openPalette } from "./components/Palette";
@@ -29,6 +29,8 @@ import { call, copyText, isTauri, load, save } from "./lib/storage";
 import { activeTree, Page, useApp } from "./lib/store";
 import AccountsPage from "./pages/Accounts";
 import AnalysisPage, { openPgnFile, pasteGame } from "./pages/Analysis";
+import CoachesPage from "./pages/Coaches";
+import ScanPage from "./pages/Scan";
 import EnginesPage from "./pages/Engines";
 import FicsPage from "./pages/Fics";
 import LibraryPage from "./pages/Library";
@@ -52,11 +54,13 @@ const PAGES: { id: Page; title: string; icon: ReactNode; group: number }[] = [
   { id: "matches", title: "Engine Tournaments", icon: <IconTrophy size={21} />, group: 0 },
   { id: "analysis", title: "Analysis", icon: <IconActivity size={21} />, group: 1 },
   { id: "puzzles", title: "Puzzles", icon: <IconPuzzle size={21} />, group: 1 },
+  { id: "coaches", title: "Coaches", icon: <IconSchool size={21} />, group: 1 },
   { id: "training", title: "Training", icon: <IconTarget size={21} />, group: 1 },
   { id: "repertoire", title: "Repertoire", icon: <IconBook2 size={21} />, group: 1 },
   { id: "studies", title: "Studies", icon: <IconNotebook size={21} />, group: 1 },
   { id: "progress", title: "Progress", icon: <IconChartLine size={21} />, group: 1 },
   { id: "library", title: "Library", icon: <IconBooks size={21} />, group: 2 },
+  { id: "scan", title: "Sheet2PGN", icon: <IconScan size={21} />, group: 2 },
   { id: "accounts", title: "Accounts", icon: <IconUserCircle size={21} />, group: 2 },
   { id: "engines", title: "Engines", icon: <IconCpu size={21} />, group: 2 },
 ];
@@ -64,7 +68,7 @@ const PAGES: { id: Page; title: string; icon: ReactNode; group: number }[] = [
 const VIEWS: Record<Page, () => JSX.Element> = {
   play: PlayPage, online: OnlinePage, lichess: LichessPage, fics: FicsPage, watch: WatchPage, matches: MatchesPage, analysis: AnalysisPage,
   puzzles: PuzzlesPage, training: TrainingPage, repertoire: RepertoirePage, progress: ProgressPage, library: LibraryPage,
-  accounts: AccountsPage, engines: EnginesPage, settings: SettingsPage, studies: StudiesPage,
+  accounts: AccountsPage, engines: EnginesPage, settings: SettingsPage, studies: StudiesPage, coaches: CoachesPage, scan: () => <ScanPage />,
 };
 
 const say = (message: string) => notifications.show({ message, autoClose: 1800 });

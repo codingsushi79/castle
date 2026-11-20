@@ -1,5 +1,40 @@
 # Castle changelog
 
+## 2.4.0-1
+
+The first beta of Castle 2.4: coaches, opponents that play at their real rating, and Sheet2PGN.
+
+### Coaches
+- **Five coaches** (Coaches, in the sidebar) each teach two openings: the Italian Game, Scandinavian, Ruy Lopez, Queen's Gambit, London System, Caro-Kann, Sicilian Najdorf, King's Indian, French and English.
+- **Learn** a chapter move by move, with the coach playing the other side and explaining both sides' moves; then **drill** it from memory until it's mastered, and **add it to your repertoire** in one click.
+- **Play it:** the coach plays the course's lines against you and tells you the moment you leave them.
+- **Coaches talk you through the game:** they explain their own moves, warn you about their threats, tell you when a move of yours was a mistake and what was better, and give **hints** (first which piece, then the move). You choose how strongly they play.
+
+### Personalities
+- **Seventeen opponents**, from Bea (400) to Yara (2450) and Titan at full strength: new are Bea, Theo, Sana, Felix, Lucia, Kofi, Mei, Rafael and Yara.
+- **Ratings you can trust:** each opponent's strength was measured in games against Stockfish at known ratings, instead of being guessed. Before, the weakest opponents played far above their rating (Pip, at 800, played like a 1320).
+- With only the bundled Wasabi engine, opponents reach about 2240; install Stockfish (Engines page) for the strongest ones. Castle picks whichever installed engine can play each rating.
+- **Each has a style:** attackers prefer checks and pawn storms, grinders trade into endgames, beginners grab whatever they can.
+- **They talk during the game**, each in their own way: about the opening, your mistakes and good moves, their own slips, and who's winning. Turn it off, or have it read aloud.
+- The engine's **Limit playing strength** slider uses the same measured ratings.
+
+### Sheet2PGN
+- **Print a scoresheet** (Sheet2PGN, in the sidebar) where each move has a box to write it in and circles to fill in: the piece, and the file and rank of the square it went to.
+- **Scan or photograph it** and get the game back as PGN. Castle replays the moves and checks every one is legal; when a circle is unclear, the rest of the game usually says which move it was, and anything left in doubt is shown beside your handwriting to check.
+- **Works on a phone too:** Sheet2PGN is in the web version, so you can photograph the sheet at the board.
+- Names typed before printing come back when you scan.
+
+### Analysis
+- **Player names:** when a game's PGN names its players, they're shown above and below the board, with their ratings and the clock at each move.
+
+### Castle Online
+- **Chat with your opponent even when relayed:** when your apps can't connect directly, chat now goes through Castle's server, like the moves, with the same filter as room chat. Before, chat was off in relayed games.
+- **Material count:** each player's strip shows how much material they're ahead (+3 and so on), as in games against the computer.
+
+### Fixes
+- **Printing a scoresheet** no longer prints the Share menu over it.
+- **C clears drawings** again after you've clicked a tab or switch beside the board, and now works on every board, not just Analysis.
+
 ## 2.3.1
 
 Castle 2.3.1: Castle Online in your browser, live play that's faster and fairer, and a lot more to do with other people.

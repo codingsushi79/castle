@@ -18,7 +18,9 @@ import "../lib/swiss.js"; // and Swiss tournaments
  * one query every 400 ms; while listening, that check runs every 3 s as a safety net.
  *
  * App → server: {t:"watch", games:[ids]}, {t:"rooms", rooms:[ids]}, {t:"hello", token}
- * Server → app: {t:"game", game}, {t:"room", room, lines}, {t:"inbox"}
+ * Server → app: {t:"game", game}, {t:"room", room, lines}, {t:"inbox"},
+ *   {t:"say", id}: a relayed chat line waits for a player of that game (only
+ *   the seat can read it, with its key, so the nudge carries no text).
  * Vercel ends a function after a few minutes; the app reconnects.
  */
 interface Sub { games: Set<string>; rooms: Set<string>; guest?: string }
@@ -60,6 +62,10 @@ function onEvent(e: { t?: string; id?: string; guest?: string; room?: string }) 
   if (e.t === "study" && e.id) {
     // A study changed: everyone looking at it reloads it.
     for (const [ws, s] of subs) if (s.rooms.has(`study:${e.id}`)) send(ws, { t: "study", id: e.id });
+    return;
+  }
+  if (e.t === "say" && e.id) {
+    for (const [ws, s] of subs) if (s.games.has(e.id)) send(ws, { t: "say", id: e.id });
     return;
   }
   if (e.t === "game" && e.id) dirty.games.add(e.id);

@@ -1,6 +1,6 @@
 import { variantOf } from "./chess.js";
-import { cleanName, cleanText, daysOf, fail, Handler, json, ping, sql, timeOf } from "./db.js";
-import { blocked, createGame, GameOptions, load, remember, takeSeat, toMove, verified } from "./game.js";
+import { cleanName, cleanText, daysOf, fail, Handler, json, other, ping, sql, timeOf } from "./db.js";
+import { blocked, createGame, GameOptions, load, remember, seatOf, takeSeat, toMove, verified } from "./game.js";
 import { MUTE_AFTER_REPORTS } from "./moderation.js";
 import { alert } from "./push.js";
 import { randomId, seal } from "./token.js";
@@ -142,6 +142,33 @@ export const socialRoutes: Record<string, Handler> = {
     const after = Number(u.searchParams.get("after") ?? 0) || 0;
     const rows = await sql`select id, name, kind, text, guest, created_at from chat where game_id = ${id} and id > ${after} order by id limit 100`;
     return json({ lines: rows.map((r) => ({ id: Number(r.id), name: r.name, kind: r.kind, text: r.text, guest: r.guest ?? null, at: new Date(r.created_at).getTime() })) });
+  },
+
+  /*
+   * ── Players' chat when the game is relayed ──
+   * Chat between the two players goes straight between their apps when they're
+   * connected directly. When they aren't (a firewall, a browser that can't), it
+   * comes through here instead, with the same filter, rate limit and report mute
+   * as room chat. Lines wait in the game's private signals for the other seat,
+   * which reads them with its seat key (GET signal); the live socket nudges it.
+   */
+  "POST say": async (_r, _u, b) => {
+    const g = await load(b.id);
+    const seat = g && seatOf(g, b.key);
+    if (!g || !seat) return fail("You are not playing this game.", 403);
+    const text = cleanText(String(b.text ?? "").replace(/[\u0000-\u001f\u007f]/g, "").trim().slice(0, 300));
+    if (!text) return fail("Nothing to send.");
+    const p = b.token ? await verified(b.token) : undefined;
+    if (p) {
+      const reports = await sql`select count(distinct reporter)::int as n from reports where reported = ${p.id} and created_at > now() - interval '1 day'`;
+      if (reports[0].n >= MUTE_AFTER_REPORTS) return fail("Several players reported you, so your chat is off for a day.", 403);
+    }
+    const to = other(seat);
+    const recent = await sql`select count(*)::int as n from signals where game_id = ${g.id} and to_color = ${to} and body->>'t' = 'chat' and created_at > now() - interval '10 seconds'`;
+    if (recent[0].n >= 6) return fail("Slow down a little.", 429);
+    await sql`insert into signals (game_id, to_color, body) values (${g.id}, ${to}, ${JSON.stringify({ t: "chat", text })})`;
+    await ping({ t: "say", id: g.id });
+    return json({ ok: true, text });
   },
 
   /* ── Blocks and reports ── */

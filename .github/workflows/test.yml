@@ -3,7 +3,9 @@ name: Tests
 # Typechecks the app and the Castle Online server, then runs the server's
 # end-to-end tests and the app's online code against it (both on an
 # in-process Postgres, so no database or network is needed), and a two-player
-# play test: two copies of the app's online code playing each other.
+# play test: two copies of the app's online code playing each other, and the
+# app's own logic: personalities, coaches' courses and commentary, and Sheet2PGN
+# reading photographed scoresheets.
 # Releases call this first (build.yml), so a failing test stops a release.
 on:
   push:
@@ -42,4 +44,7 @@ jobs:
         working-directory: server
       - name: Two-player play test
         run: npm run test:play
+        working-directory: server
+      - name: App logic tests (personalities, coaches, Sheet2PGN)
+        run: npm run test:app
         working-directory: server

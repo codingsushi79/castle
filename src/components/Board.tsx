@@ -1,3 +1,4 @@
+import { useAction } from "../lib/shortcuts";
 import { Chessground } from "chessground";
 import type { Api } from "chessground/api";
 import type { Config } from "chessground/config";
@@ -316,6 +317,10 @@ export function Board(props: Props) {
   };
 
   useEffect(sync);
+
+  // C clears what was drawn on any board. Pages that keep drawings with the
+  // position (Analysis) register their own, which wins.
+  useAction("board.clearDrawings", () => { drawn.current = []; api.current?.setShapes([]); }, !props.onShapes && !props.readOnly);
 
   const promote = (role: Role | undefined) => {
     appliedFen.current = undefined;

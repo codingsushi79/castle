@@ -118,6 +118,19 @@ const lines = await call(`chat?id=${s1.id}&after=0`);
 ok(lines.lines.some((l) => l.text === "what the ****"), "offensive words are starred out in chat");
 ok(lines.lines.some((l) => l.text === "the Knights of Nigeria"), "ordinary words in chat are left alone");
 
+// Players' chat through the server, for games that aren't connected directly.
+const said = await call("say", { id: c1.id, key: c1.key, text: "what the fuck, gg", token: A.token });
+ok(said.ok && said.text === "what the ****, gg", "relayed player chat goes through the same word filter");
+const forBob = await call(`signal?id=${c1.id}&key=${cj.key}&after=0`);
+const forAnn = await call(`signal?id=${c1.id}&key=${c1.key}&after=0`);
+ok(forBob.signals.some((x) => x.body.t === "chat" && x.body.text === "what the ****, gg") && !forAnn.signals.some((x) => x.body.t === "chat"), "it waits for the opponent only, behind their seat key");
+ok((await call("say", { id: c1.id, key: "not-a-key", text: "hi" }))._status === 403, "only the players can send it");
+ok((await call(`signal?id=${c1.id}&key=nope&after=0`))._status === 403, "or read it");
+ok((await call("say", { id: c1.id, key: cj.key, text: "hi", token: C.token }))._status === 403, "a muted guest can't use it either");
+let slow;
+for (let i = 0; i < 8 && !slow; i++) { const r = await call("say", { id: c1.id, key: cj.key, text: `spam ${i}` }); if (r._status === 429) slow = i; }
+ok(slow !== undefined && slow >= 5, `and it's rate limited like room chat (stopped after ${slow})`);
+
 section("Challenges and presence");
 const ch = await call("challenge", { token: A.token, name: "Ann", to: B.id, minutes: 3, increment: 2, variant: "crazyhouse" });
 let inbox = await call("inbox", { token: B.token, name: "Bob" });

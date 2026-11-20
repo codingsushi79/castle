@@ -9,7 +9,7 @@ import { Board } from "../components/Board";
 import { EvalBar, MoveList, Panel, PlayerStrip } from "../components/common";
 import { OnlineStats } from "../components/OnlineStats";
 import { BotsPanel, openProfile, PhoneAlerts, SimulList, SimulPanel, TeamModal } from "../components/OnlineExtras";
-import { Color, GameTree, GNode, positionOf, sanLine, scoreText, Shape, uciOf } from "../lib/chess";
+import { Color, GameTree, GNode, materialBalance, positionOf, sanLine, scoreText, Shape, uciOf } from "../lib/chess";
 import { entryOf, launch, resolveEngine } from "../lib/engines";
 import {
   ABANDON_MS, ARENA_BREAK_MS, ArenaInfo, CATEGORY_LABELS, categoryOf, Challenge, Correspondence, GameView, gamesFor, ONLINE_VARIANTS, OnlineVariant,
@@ -873,6 +873,8 @@ export function OnlineGame() {
     return () => window.removeEventListener("keydown", key);
   }, [pending]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Material ahead, from the position on the board (so it follows you through the moves).
+  const balance = materialBalance(shown.fen);
   const strip = (c: Color) => {
     const s = g[c];
     const change = s.after != null && s.rating != null ? s.after - s.rating : undefined;
@@ -881,7 +883,8 @@ export function OnlineGame() {
     return (
       <PlayerStrip name={`${s.name ?? (g.status === "waiting" ? (o.challenging ? `Waiting for ${o.challenging.name}…` : "Waiting for an opponent…") : "?")}${g.berserk?.[c] ? " ⚔" : ""}`} color={c}
         detail={(rating + corrLeft) || undefined}
-        clock={g.status === "waiting" || g.days ? undefined : clocks[c] / 1000} active={g.status === "playing" && turn === c} />
+        clock={g.status === "waiting" || g.days ? undefined : clocks[c] / 1000} active={g.status === "playing" && turn === c}
+        material={c === "white" ? Math.max(0, balance) : Math.max(0, -balance)} />
     );
   };
 
@@ -902,6 +905,8 @@ export function OnlineGame() {
 
   const opp = opponent ? g[opponent] : undefined;
   const botGame = isBot(opp?.guest);
+  // Chat goes straight to the opponent when connected directly, and through the server when relayed.
+  const canChat = !botGame && (o.link === "direct" || o.link === "relay");
   const oppGuest = opp?.guest && opp.guest !== o.profile?.id && !botGame ? opp.guest : undefined;
   const canFriend = !!oppGuest && !o.friends.some((f) => f.id === oppGuest);
   const arenaBreak = g.arena && o.arena?.info.id === g.arena && g.status === "finished" && seat ? Math.max(0, ARENA_BREAK_MS - (Date.now() - (o.endedAt ?? 0))) : undefined;
@@ -1070,11 +1075,11 @@ export function OnlineGame() {
                   <div style={{ maxHeight: 130, overflowY: "auto" }} className="selectable">
                     {o.chat.length ? o.chat.map((c, i) => (
                       <Text key={i} size="sm" c={c.from === "system" ? "dimmed" : undefined}>{c.from === "system" ? c.text : <><b>{c.from === mine ? "You" : g[c.from].name}:</b> {c.text}</>}</Text>
-                    )) : <Text size="xs" c="dimmed">{o.link === "direct" ? "Say hello. Chat goes directly to your opponent." : "Chat opens once you are connected directly."}</Text>}
+                    )) : <Text size="xs" c="dimmed">{botGame ? "Bots don't chat." : o.link === "direct" ? "Say hello. Chat goes directly to your opponent." : o.link === "relay" ? "Say hello. Chat goes through Castle's server, like the moves." : "Chat opens once you're connected."}</Text>}
                   </div>
                   <Group gap={6} mt={6} wrap="nowrap">
-                    <TextInput style={{ flex: 1 }} size="xs" placeholder="Message" disabled={o.link !== "direct"} value={message} onChange={(e) => setMessage(e.currentTarget.value)} onKeyDown={(e) => { if (e.key === "Enter") { o.say(message); setMessage(""); } }} />
-                    <Button size="xs" variant="default" disabled={o.link !== "direct"} onClick={() => { o.say(message); setMessage(""); }}><IconSend size={13} /></Button>
+                    <TextInput style={{ flex: 1 }} size="xs" placeholder="Message" disabled={!canChat} value={message} onChange={(e) => setMessage(e.currentTarget.value)} onKeyDown={(e) => { if (e.key === "Enter") { o.say(message); setMessage(""); } }} />
+                    <Button size="xs" variant="default" disabled={!canChat} onClick={() => { o.say(message); setMessage(""); }}><IconSend size={13} /></Button>
                   </Group>
                 </>
               )

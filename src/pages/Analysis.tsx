@@ -7,7 +7,7 @@ import {
 } from "@tabler/icons-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AutoArrow, Board } from "../components/Board";
-import { EvalBar, EvalChart, MoveList, NavBar, Panel } from "../components/common";
+import { EvalBar, EvalChart, MoveList, NavBar, Panel, PlayerStrip } from "../components/common";
 import { paint, Placement, PlacementBar } from "../components/Placement";
 import { ExplorerPanel, TablebasePanel } from "../components/Explorer";
 import { consensus, useAnalysis } from "../lib/analysis";
@@ -38,6 +38,26 @@ export function tabTitle(tree: GameTree): string {
   const clean = (v: string, d: string) => (!v || v === "?" ? d : v);
   const w = clean(tree.tag("White"), "White"), b = clean(tree.tag("Black"), "Black");
   return w === "White" && b === "Black" ? "Analysis" : `${w.split(",")[0]} – ${b.split(",")[0]}`;
+}
+
+const named = (v: string) => !!v && v !== "?" && v !== "-";
+
+/** Whether the game's PGN names its players (so the board shows who sat where). */
+export const hasPlayerNames = (tree: GameTree) => named(tree.tag("White")) || named(tree.tag("Black"));
+
+/** A player's name, title and rating from the PGN, with their clock as of the move on the board. */
+function AnalysisPlayer({ tree, node, color }: { tree: GameTree; node: GNode; color: Color }) {
+  const side = color === "white" ? "White" : "Black";
+  const name = named(tree.tag(side)) ? tree.tag(side) : side;
+  const title = tree.tag(`${side}Title`);
+  const elo = tree.tag(`${side}Elo`);
+  const detail = [named(title) ? title : "", named(elo) && elo !== "0" ? elo : ""].filter(Boolean).join(" ");
+  // The clock shown is the one recorded after this player's latest move up to here.
+  let clock: number | undefined;
+  for (let n: GNode | undefined = node; n?.parent; n = n.parent) {
+    if (n.parent.turn === color) { clock = n.clock; break; }
+  }
+  return <PlayerStrip name={name} color={color} detail={detail || undefined} clock={clock} active={clock !== undefined && node.turn === color} />;
 }
 
 export async function openPgnFile() {
@@ -132,6 +152,7 @@ function AnalysisBoard({ tree, compact }: { tree: GameTree; compact?: boolean })
   const [study, setStudy] = useState<"import" | "export">();
   const node = tree.current;
   const orientation: Color = flipped ? "black" : "white";
+  const players = hasPlayerNames(tree);
 
   useAction("board.back", () => tree.back());
   useAction("board.forward", () => tree.forward());
@@ -245,6 +266,7 @@ function AnalysisBoard({ tree, compact }: { tree: GameTree; compact?: boolean })
           <span style={{ flex: 1 }} />
           <Text size="xs" c="dimmed" truncate>{opening ? `${opening.eco} ${opening.name}` : tree.tag("Opening") || (node.parent ? "" : variantName(tree.rules, tree.chess960))}</Text>
         </div>
+        {!placing && players && <AnalysisPlayer tree={tree} node={node} color={orientation === "white" ? "black" : "white"} />}
         <div className="boardrow">
           <EvalBar score={a.score ?? cloud?.pvs[0]?.score} flipped={flipped} />
           {placing ? (
@@ -263,6 +285,7 @@ function AnalysisBoard({ tree, compact }: { tree: GameTree; compact?: boolean })
               onMove={(m) => { const n = tree.play(m); if (n) Sound.forSan(n.san); }} />
           )}
         </div>
+        {!placing && players && <AnalysisPlayer tree={tree} node={node} color={orientation} />}
         {placing ? (
           <PlacementBar p={placing} onChange={setPlacing} onCancel={() => setPlacing(undefined)} onDone={(fen) => {
             setPlacing(undefined);
@@ -488,7 +511,8 @@ export function printScoresheet(tree: GameTree) {
   el.innerHTML = `<h1>${esc(tree.tag("White", "White"))} – ${esc(tree.tag("Black", "Black"))}</h1>
     <div>${esc([tree.tag("Event"), tree.tag("Site"), tree.tag("Date"), tree.result].filter(Boolean).join(" · "))}</div>
     <table>${rows.join("")}</table>`;
-  call("print_page").catch(() => window.print());
+  // Let the menu that asked for this close first.
+  setTimeout(() => call("print_page").catch(() => window.print()), 200);
 }
 
 /** SAN tokens for an engine line, each knowing how many moves of the line it ends. */

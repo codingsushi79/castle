@@ -325,7 +325,7 @@ const routes: Record<string, Handler> = {
 
 /** Things a banned player can't do: start or join games, challenge, chat, enter tournaments or races. */
 const BANNED_FROM = new Set([
-  "POST games", "POST join", "POST challenge", "POST answer", "POST chat", "POST arena/join", "POST arena/pair", "POST arena/create",
+  "POST games", "POST join", "POST challenge", "POST answer", "POST chat", "POST say", "POST arena/join", "POST arena/pair", "POST arena/create",
   "POST swiss/join", "POST swiss/pair", "POST swiss/create", "POST race/rush", "POST race/storm", "POST race/battle", "POST race/join",
   "POST team/create", "POST team/join", "POST battle", "POST battle/join", "POST rush",
   "POST simul/create", "POST simul/join", "POST bot/play", "POST study/create",

@@ -94,6 +94,13 @@ try {
   ok(after[0] === "e2e4" && after[1] === "e2e4", "after the takeback both boards are back to 1.e4");
   await bob.run(`o().move("e7e5");`);
   ok((await ann.run(`await until(() => o().game.ply === 2); return o().game.moves[1];`)) === "e7e5", "and play goes on");
+  // In Node there's no WebRTC, so these two are relayed: chat has to go through the server.
+  ok((await both(`return o().link;`)).every((l) => l === "relay"), "the two apps play through the server (relayed)");
+  await ann.run(`o().say("good luck!");`);
+  ok(await bob.run(`return await until(() => o().chat.some((c) => c.from === "white" && c.text === "good luck!"), 5000);`), "relayed chat reaches the opponent");
+  await bob.run(`o().say("you too");`);
+  const annChat = await ann.run(`await until(() => o().chat.some((c) => c.from === "black"), 5000); return o().chat.filter((c) => c.from !== "system").map((c) => c.from + ":" + c.text);`);
+  ok(annChat.join("|") === "white:good luck!|black:you too", `and back, once each (${annChat.join(" | ")})`);
   await ann.run(`await o().saveNotes("Bob likes f6");`);
   ok((await ann.run(`return await o().loadNotes();`)) === "Bob likes f6" && (await bob.run(`return await o().loadNotes();`)) === "", "notes stay private");
   await ann.run(`await o().act("resign");`);

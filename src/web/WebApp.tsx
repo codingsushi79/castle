@@ -1,5 +1,5 @@
 import { Anchor, Button, Group, SegmentedControl, Text, Tooltip } from "@mantine/core";
-import { IconBell, IconBellCheck, IconBook, IconBroadcast, IconDownload, IconPuzzle } from "@tabler/icons-react";
+import { IconBell, IconBellCheck, IconBook, IconBroadcast, IconDownload, IconPuzzle, IconScan } from "@tabler/icons-react";
 import { useEffect, useState } from "react";
 import { Board } from "../components/Board";
 import { MiniTV } from "../components/MiniTV";
@@ -13,13 +13,14 @@ import { useOpenings } from "../lib/openings";
 import { OnlineGame, OnlinePanels } from "../pages/Online";
 import PuzzlesPage from "../pages/Puzzles";
 import StudiesPage from "../pages/Studies";
+import ScanPage from "../pages/Scan";
 
 /**
  * Castle in a browser: Castle Online (play, tournaments, TV), the online
- * puzzle modes, and studies. Engines, the game library and other desktop
- * features stay in the app.
+ * puzzle modes, studies, and Sheet2PGN (photograph a scoresheet with a phone).
+ * Engines, the game library and other desktop features stay in the app.
  */
-type Tab = "play" | "puzzles" | "studies";
+type Tab = "play" | "puzzles" | "studies" | "scan";
 
 /** Links like /play/#game=<id> (from an alert) and /play/#study=<id>&edit=<code>. */
 function useHashLinks(setTab: (t: Tab) => void) {
@@ -115,6 +116,7 @@ export function WebApp() {
           { value: "play", label: <Group gap={4} wrap="nowrap"><IconBroadcast size={14} /><span>Play</span></Group> },
           { value: "puzzles", label: <Group gap={4} wrap="nowrap"><IconPuzzle size={14} /><span>Puzzles</span></Group> },
           { value: "studies", label: <Group gap={4} wrap="nowrap"><IconBook size={14} /><span>Studies</span></Group> },
+          { value: "scan", label: <Group gap={4} wrap="nowrap"><IconScan size={14} /><span>Sheet2PGN</span></Group> },
         ]} />
         <Group gap={8} wrap="nowrap">
           {p && <Text size="xs" c="dimmed" className="web-hide-narrow">{o.name} · {p.rating}</Text>}
@@ -127,7 +129,7 @@ export function WebApp() {
         </Group>
       </header>
       <main className="web-main">
-        {tab === "play" ? <PlayTab /> : tab === "puzzles" ? <PuzzlesPage /> : <StudiesPage />}
+        {tab === "play" ? <PlayTab /> : tab === "puzzles" ? <PuzzlesPage /> : tab === "scan" ? <ScanPage web /> : <StudiesPage />}
       </main>
       <MiniTV />
       <ProfileModal />
