@@ -1,5 +1,41 @@
 # Castle changelog
 
+## 2.3.1
+
+Castle 2.3.1: Castle Online in your browser, live play that's faster and fairer, and a lot more to do with other people.
+
+### Castle Online in your browser
+- **Play from any browser** at castle-online.vercel.app/play: quick pairing, friends, tournaments, Castle TV, ranked puzzles and studies, on a computer or a phone.
+- **Phone alerts:** link your phone by scanning a QR code (Play → Online → Ratings & transfer → Phone alerts) and get a notification for correspondence moves and challenges, even when Castle is closed.
+
+### Play online
+- **Instant updates:** moves, chat and challenges arrive the moment they happen.
+- **Ratings per category:** bullet, blitz, rapid, classical, correspondence and each variant, each with its own leaderboard.
+- **Correspondence:** 1 to 14 days per move, with the games following you to any computer your rating is on.
+- **Swiss tournaments** (including a Daily Swiss every evening), **arena extras** (berserk, arena chat, a podium), **team battles** and **simuls**.
+- **Bots:** play Pip, Nora, Viktor, Amara, Dmitri or Ingrid any time, even in the browser. Bot games are never rated.
+- **Castle TV:** the top live game, with channels for each speed and variant, and a small window that keeps playing while you use the rest of Castle.
+- **Takebacks** in casual games, private **notes** on any game, and **sharing**: a link, the PGN or an animated GIF.
+- **Teams** with their own page and chat, and **profiles** for every player, with a page you can share.
+
+### Your rating
+- **Move it to another computer** with a short code, or link it to your Lichess account.
+
+### Learning
+- **Studies:** analysis in chapters, kept online, to share or edit together.
+- **Lessons** on checkmates, tactics and endgames (Puzzles → Learn), with worked examples and practice puzzles.
+- **Puzzle storm:** three minutes on one clock, with its own leaderboard.
+- **What you should have played** after each review, **your stats** by category and colour, **opening prep** after each game, and a **Castle Online explorer** in Analysis.
+
+### Fairness and safety
+- **Block** and **report** players, a word filter for names and chat, and a moderation page for the server's administrator.
+
+### Updating and reliability
+- **Updates download in the background** and install on **Restart to update**; you see what's in an update before installing it.
+- **No more keychain prompts after updates**, and one Castle in the Dock after restarting.
+- **Keep Castle in the menu bar** so move alerts and challenges arrive with the window closed.
+- **Optional error reports**, and release notes that display properly.
+
 ## 2.3.1-3
 
 The third beta of Castle 2.3.1.
