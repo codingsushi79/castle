@@ -23,6 +23,15 @@ const say = (message: string) => notifications.show({ message, autoClose: 2200 }
 type SheetInfo = { headers: Record<string, string>; printed: number };
 const sheets = () => load<Record<string, SheetInfo>>("sheets", {});
 
+/**
+ * WebKit (the Mac app and Safari) prints a CSS pixel as 0.8 pt rather than
+ * 0.75, so everything comes out a fifteenth bigger and a 262 mm sheet needs
+ * 280 mm: more than US Letter has, so it spilled onto a second page. Scaling
+ * it by 15/16 there prints it at its real size, as other browsers do.
+ */
+const ua = typeof navigator === "undefined" ? "" : navigator.userAgent;
+const PRINT_SCALE = /AppleWebKit/.test(ua) && !/Chrome|Chromium/.test(ua) ? 0.9375 : 1;
+
 function printSheets(headers: Record<string, string>, pages: number) {
   const n = (load<number>("sheetCounter", Math.floor(Math.random() * 1000)) + 1) % 1024;
   save("sheetCounter", n);
@@ -36,6 +45,8 @@ function printSheets(headers: Record<string, string>, pages: number) {
   }
   el.innerHTML = Array.from({ length: pages }, (_, i) => `<div class="sheet-page">${sheetSvg({ sheet: n, page: i + 1, headers })}</div>`).join("");
   el.classList.add("sheet-print");
+  el.style.setProperty("--sheet-w", `${SHEET.width * PRINT_SCALE}mm`);
+  el.style.setProperty("--sheet-h", `${SHEET.height * PRINT_SCALE}mm`);
   const done = () => el!.classList.remove("sheet-print");
   window.addEventListener("afterprint", done, { once: true });
   setTimeout(() => (isTauri ? call("print_page") : Promise.reject()).catch(() => window.print()), 200);

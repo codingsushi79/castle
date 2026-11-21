@@ -278,6 +278,6 @@ kbd { font-family: ui-monospace, Menlo, monospace; }
   .print-only.sheet-print { padding: 0; }
   .print-only.sheet-print .sheet-page { break-after: page; display: flex; justify-content: center; }
   .print-only.sheet-print .sheet-page:last-child { break-after: auto; }
-  .print-only.sheet-print svg { width: 190mm; height: 262mm; }
+  .print-only.sheet-print svg { width: var(--sheet-w, 190mm); height: var(--sheet-h, 262mm); }
 }
 @page { margin: 8mm; }

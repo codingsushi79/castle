@@ -1,5 +1,12 @@
 # Castle changelog
 
+## 2.4.0-3
+
+2.4.0 beta 2, patch 112026-1.
+
+### Fixes
+- **Printing a scoresheet** from the Mac app (or Safari) fits it on one US Letter page again. It came out slightly bigger than its real size and spilled onto a second page; it now prints at its real size.
+
 ## 2.4.0-2
 
 The second beta of Castle 2.4.
