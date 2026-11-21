@@ -1,5 +1,5 @@
-import { Badge, Button, Group, Loader, Modal, NumberInput, SegmentedControl, Select, Text, TextInput, Tooltip } from "@mantine/core";
-import { IconCopy, IconDeviceMobile, IconRobot, IconSwords, IconTrophy, IconUsers } from "@tabler/icons-react";
+import { Badge, Button, FileButton, Group, Loader, Modal, NumberInput, SegmentedControl, Select, Text, TextInput, Tooltip } from "@mantine/core";
+import { IconCopy, IconDeviceMobile, IconPhoto, IconTrash, IconRobot, IconSwords, IconTrophy, IconUsers } from "@tabler/icons-react";
 import QRCode from "qrcode";
 import { useEffect, useState } from "react";
 import { create } from "zustand";
@@ -9,6 +9,7 @@ import {
 import { copyText } from "../lib/storage";
 import { useApp } from "../lib/store";
 import { Panel } from "./common";
+import { PlayerAvatar, shrinkPicture } from "./PlayerAvatar";
 
 const SITE = ONLINE_API.replace(/\/api$/, "");
 const run = async (setBusy: (v?: string) => void, what: string, f: () => Promise<unknown>) => {
@@ -36,9 +37,28 @@ export function ProfileModal() {
   const ratings = Object.entries(p?.ratings ?? {}).sort((a, b) => b[1].g - a[1].g);
   const me = guest === o.profile?.id;
   const friend = !!p && o.friends.some((f) => f.id === p.guest);
+  const [picBusy, setPicBusy] = useState(false);
+  const hasPic = !!p && (o.avatars[p.guest] !== undefined ? o.avatars[p.guest] !== null : p.avatar !== null);
+  const setPicture = async (image: File | null | "remove") => {
+    if (!image) return;
+    setPicBusy(true); setError(undefined);
+    try { await o.setAvatar(image === "remove" ? null : await shrinkPicture(image)); } catch (e: any) { setError(e.message); } finally { setPicBusy(false); }
+  };
+  const presence = <span className={"presence" + (p?.online ? " on" : "")} />;
   return (
-    <Modal opened={!!guest} onClose={close} size="lg" title={p ? <Group gap={8}><span className={"presence" + (p.online ? " on" : "")} /><Text fw={800}>{p.name}</Text>{p.team && <Badge size="sm" variant="light">{p.team}</Badge>}</Group> : "Player"}>
-      {error ? <Text c="red" size="sm">{error}</Text> : !p ? <Loader size="sm" /> : (
+    <Modal opened={!!guest} onClose={close} size="lg" title={p ? (
+      <Group gap={10}>
+        {hasPic ? (
+          // The picture, with the online dot on its corner.
+          <span className="pic-wrap">
+            <PlayerAvatar guest={p.guest} version={p.avatar} size={44} fallback={<span className="player-pic" style={{ width: 44, height: 44 }} />} />
+            {presence}
+          </span>
+        ) : presence}
+        <Text fw={800}>{p.name}</Text>{p.team && <Badge size="sm" variant="light">{p.team}</Badge>}
+      </Group>
+    ) : "Player"}>
+      {error && !p ? <Text c="red" size="sm">{error}</Text> : !p ? <Loader size="sm" /> : (
         <>
           <Text size="xs" c="dimmed">{p.games} games · {p.wins} won · {p.draws} drawn · {p.losses} lost · playing since {new Date(p.since).toLocaleDateString()}</Text>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(110px, 1fr))", gap: 8, marginTop: 10 }}>
@@ -63,7 +83,14 @@ export function ProfileModal() {
               <Text size="xs" c="dimmed">{g.result} · {g.reason}</Text>
             </div>
           )) : <Text size="xs" c="dimmed">None yet.</Text>}
+          {error && <Text c="red" size="sm" mt="sm">{error}</Text>}
           <Group mt="md" gap={6}>
+            {me && (
+              <FileButton accept="image/png,image/jpeg,image/webp,image/gif,image/heic" onChange={setPicture}>
+                {(props) => <Button {...props} size="xs" variant="light" loading={picBusy} leftSection={<IconPhoto size={13} />}>{hasPic ? "Change picture" : "Add a picture"}</Button>}
+              </FileButton>
+            )}
+            {me && hasPic && <Button size="xs" variant="subtle" color="gray" disabled={picBusy} leftSection={<IconTrash size={13} />} onClick={() => setPicture("remove")}>Remove picture</Button>}
             {!me && !friend && <Button size="xs" variant="light" onClick={() => o.addFriend({ id: p.guest, name: p.name })}>Add as a friend</Button>}
             <Button size="xs" variant="default" leftSection={<IconCopy size={13} />} onClick={() => copyText(`${SITE}/p/${p.guest}`)}>Copy profile link</Button>
           </Group>

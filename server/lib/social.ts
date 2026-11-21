@@ -195,7 +195,7 @@ export const socialRoutes: Record<string, Handler> = {
     const p = await verified(b.token);
     if (!p) return fail("Your rating token is not valid.", 401);
     const guest = String(b.guest ?? "");
-    const reason = ["chat", "cheating", "name", "stalling", "other"].includes(b.reason) ? b.reason : "other";
+    const reason = ["chat", "cheating", "name", "picture", "stalling", "other"].includes(b.reason) ? b.reason : "other";
     if (!guest || guest === p.id) return fail("Choose someone to report.");
     const again = await sql`select 1 from reports where reporter = ${p.id} and reported = ${guest} and created_at > now() - interval '1 day'`;
     if (!again.length) await sql`insert into reports (reporter, reported, game_id, reason) values (${p.id}, ${guest}, ${b.game ? String(b.game) : null}, ${reason})`;

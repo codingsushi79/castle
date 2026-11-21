@@ -1,5 +1,13 @@
 # Castle changelog
 
+## 2.4.0-4
+
+The fourth beta of Castle 2.4: profile pictures.
+
+### Castle Online
+- **Profile pictures:** open your profile (Play → Online → Profile) and choose Add a picture. It shows on your profile, beside the board in your online games (with a ring in your colour), and next to "You" in games against the computer. Change or remove it any time.
+- Pictures can be reported as offensive, like names.
+
 ## 2.4.0-3
 
 2.4.0 beta 2, patch 112026-1.

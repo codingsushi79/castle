@@ -5,6 +5,7 @@ import { Area, AreaChart, ReferenceLine, ResponsiveContainer, YAxis } from "rech
 import { Color, GameTree, GNode, NAGS, Score, scoreShort, winPercent } from "../lib/chess";
 import { useTree } from "../lib/store";
 import { clockText } from "../lib/storage";
+import { PlayerAvatar } from "./PlayerAvatar";
 
 export function Panel({ title, right, children, grow, pad = true }: { title?: ReactNode; right?: ReactNode; children: ReactNode; grow?: boolean; pad?: boolean }) {
   return (
@@ -55,10 +56,12 @@ export function ResultBar({ white, draws, black }: { white: number; draws: numbe
   );
 }
 
-export function PlayerStrip({ name, color, detail, clock, active, material }: { name: string; color: Color; detail?: string; clock?: number; active?: boolean; material?: number }) {
+/** A player's name, rating, clock and material beside the board. With `guest` (a Castle Online player), their profile picture replaces the coloured dot. */
+export function PlayerStrip({ name, color, detail, clock, active, material, guest }: { name: string; color: Color; detail?: string; clock?: number; active?: boolean; material?: number; guest?: string | null }) {
+  const dot = <span className={"dot " + color} />;
   return (
     <div className="strip">
-      <span className={"dot " + color} />
+      {guest ? <PlayerAvatar guest={guest} size={24} ring={color} fallback={dot} /> : dot}
       <Text fw={600} truncate>{name}</Text>
       {detail && <Text size="sm" c="dimmed">{detail}</Text>}
       {!!material && material > 0 && <Text size="xs" c="dimmed">+{material}</Text>}

@@ -223,8 +223,10 @@ function Game() {
   const movable = p.phase === "playing" && atEnd && !p.thinking ? (p.opponent === "human" ? "both" : p.humanColor) : undefined;
   const name = (c: Color) => (p.opponent === "human" ? (c === "white" ? "White" : "Black") : c === p.humanColor ? "You" : p.opponentName);
   const detail = (c: Color) => (p.opponent !== "human" && c !== p.humanColor && p.opponentElo ? String(Math.round(p.opponentElo)) : undefined);
+  // Your own Castle Online picture, when you have one, beside "You".
+  const myGuest = useOnline((s) => s.profile?.id);
   const strip = (c: Color) => (
-    <PlayerStrip name={name(c)} color={c} detail={detail(c)} clock={hasClock(p) ? p.clocks[c] : undefined} active={p.phase === "playing" && live.turn === c}
+    <PlayerStrip name={name(c)} guest={p.opponent !== "human" && c === p.humanColor ? myGuest : undefined} color={c} detail={detail(c)} clock={hasClock(p) ? p.clocks[c] : undefined} active={p.phase === "playing" && live.turn === c}
       material={c === "white" ? Math.max(0, balance) : Math.max(0, -balance)} />
   );
   void hasClock;

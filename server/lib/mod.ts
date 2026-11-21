@@ -75,6 +75,13 @@ export const modRoutes: Record<string, Handler> = {
     return json({ ok: true });
   },
 
+  /** Removes a player's profile picture. */
+  "POST mod/avatar": async (_r, _u, b) => {
+    if (!authorised(b.key)) return fail("Wrong key.", 401);
+    await sql`delete from avatars where guest = ${String(b.guest ?? "")}`;
+    return json({ ok: true });
+  },
+
   /** Clears a player's reports (after dealing with them, or when they were unfounded). */
   "POST mod/clear": async (_r, _u, b) => {
     if (!authorised(b.key)) return fail("Wrong key.", 401);
@@ -104,11 +111,12 @@ const post=(p,b)=>fetch("/api/"+p,{method:"POST",headers:{"content-type":"applic
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[c]);
 const ban=(g,days)=>{const reason=prompt("Reason (optional)")??"";post("mod/ban",{guest:g,days,reason}).then(load).catch(e=>alert(e.message));};
 const act=(p,g)=>post(p,{guest:g}).then(load).catch(e=>alert(e.message));
-function actions(g){return '<button class="red" onclick="ban(\\''+g+'\\',1)">Ban 1 day</button><button class="red" onclick="ban(\\''+g+'\\',7)">7 days</button><button class="red" onclick="ban(\\''+g+'\\',0)">Permanently</button>';}
+const pic=g=>'<img src="/api/avatar?guest='+encodeURIComponent(g)+'" alt="" style="width:32px;height:32px;border-radius:50%;object-fit:cover;align-self:center" onerror="this.remove()">';
+function actions(g){return '<button onclick="act(\\'mod/avatar\\',\\''+g+'\\')">Remove picture</button>'+'<button class="red" onclick="ban(\\''+g+'\\',1)">Ban 1 day</button><button class="red" onclick="ban(\\''+g+'\\',7)">7 days</button><button class="red" onclick="ban(\\''+g+'\\',0)">Permanently</button>';}
 async function load(){
   try{const d=await post("mod/list",{});$("#login").style.display="none";sessionStorage.setItem("castleModKey",key);
   let h='<h2>Reported in the last 30 days</h2>';
-  h+=d.reported.length?d.reported.map(r=>'<div class="card"><div class="row"><b>'+esc(r.name||"?")+'</b><span class="muted">'+esc(r.guest)+'</span><span>'+r.reporters+' reporter(s): '+esc(r.reasons.join(", "))+'</span>'+(r.banned_until&&new Date(r.banned_until)>new Date()?'<span class="err">banned until '+new Date(r.banned_until).toLocaleString()+'</span>':'')+'</div>'+(r.chat.length?'<div class="chat">'+r.chat.map(esc).join(" · ")+'</div>':'')+'<div>'+actions(r.guest)+'<button onclick="act(\\'mod/clear\\',\\''+r.guest+'\\')">Clear reports</button></div></div>').join(""):'<p class="muted">No reports.</p>';
+  h+=d.reported.length?d.reported.map(r=>'<div class="card"><div class="row">'+pic(r.guest)+'<b>'+esc(r.name||"?")+'</b><span class="muted">'+esc(r.guest)+'</span><span>'+r.reporters+' reporter(s): '+esc(r.reasons.join(", "))+'</span>'+(r.banned_until&&new Date(r.banned_until)>new Date()?'<span class="err">banned until '+new Date(r.banned_until).toLocaleString()+'</span>':'')+'</div>'+(r.chat.length?'<div class="chat">'+r.chat.map(esc).join(" · ")+'</div>':'')+'<div>'+actions(r.guest)+'<button onclick="act(\\'mod/clear\\',\\''+r.guest+'\\')">Clear reports</button></div></div>').join(""):'<p class="muted">No reports.</p>';
   h+='<h2>Engine-like accuracy</h2><p class="muted">At least '+d.thresholds.games+' games reviewed by their opponents, averaging '+d.thresholds.accuracy+'% or more. A flag is a reason to look at their games, not proof.</p>';
   h+=d.flagged.length?d.flagged.map(f=>'<div class="card"><div class="row"><b>'+esc(f.name||"?")+'</b><span class="muted">'+esc(f.guest)+'</span><span>'+f.accuracy+'% over '+f.games+' games</span></div><div>'+actions(f.guest)+'</div></div>').join(""):'<p class="muted">Nobody is flagged.</p>';
   h+='<h2>Error reports (last 7 days)</h2><p class="muted">Sent by players who turned error reports on.</p>'+(d.errors.length?d.errors.map(e=>'<div class="card"><div class="row"><b>'+e.count+'×</b><span>'+esc(e.message)+'</span></div><div class="muted">'+esc((e.versions||[]).join(", "))+' · '+esc((e.platforms||[]).join(", "))+' · '+esc(e.page||"")+' · last '+new Date(e.last).toLocaleString()+'</div>'+(e.stack?'<details><summary class="muted">Stack</summary><pre style="white-space:pre-wrap;font-size:11px">'+esc(e.stack)+'</pre></details>':'')+'</div>').join(""):'<p class="muted">No errors reported.</p>');

@@ -157,6 +157,10 @@ const STEPS: string[][] = [
        white integer not null default 0, draws integer not null default 0, black integer not null default 0, primary key (epd, uci))`,
     `create table if not exists flags (name text primary key, done_at timestamptz not null default now())`,
   ],
+  // 6: Castle 2.4: profile pictures
+  [
+    `create table if not exists avatars (guest text primary key, type text not null, data text not null, updated_at timestamptz not null default now())`,
+  ],
 ];
 
 let ready: Promise<void> | undefined;

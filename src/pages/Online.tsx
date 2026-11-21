@@ -881,7 +881,7 @@ export function OnlineGame() {
     const rating = s.rating != null ? `${s.rating}${change !== undefined ? ` ${change >= 0 ? "+" : ""}${change}` : ""}` : "";
     const corrLeft = g.days && g.status === "playing" && g.running && turn === c ? ` · ${daysLeft(clocks[c])} to move` : "";
     return (
-      <PlayerStrip name={`${s.name ?? (g.status === "waiting" ? (o.challenging ? `Waiting for ${o.challenging.name}…` : "Waiting for an opponent…") : "?")}${g.berserk?.[c] ? " ⚔" : ""}`} color={c}
+      <PlayerStrip guest={s.guest} name={`${s.name ?? (g.status === "waiting" ? (o.challenging ? `Waiting for ${o.challenging.name}…` : "Waiting for an opponent…") : "?")}${g.berserk?.[c] ? " ⚔" : ""}`} color={c}
         detail={(rating + corrLeft) || undefined}
         clock={g.status === "waiting" || g.days ? undefined : clocks[c] / 1000} active={g.status === "playing" && turn === c}
         material={c === "white" ? Math.max(0, balance) : Math.max(0, -balance)} />
@@ -999,7 +999,7 @@ export function OnlineGame() {
                     <Menu.Item leftSection={<IconBan size={14} />} color="red" onClick={() => o.block(oppGuest)}>Block</Menu.Item>
                     <Menu.Divider />
                     <Menu.Label>{reported ? "Thanks: the report was sent" : "Report"}</Menu.Label>
-                    {!reported && [["chat", "Rude or abusive chat"], ["cheating", "Cheating (engine help)"], ["name", "Offensive name"], ["stalling", "Stalling or leaving games"]].map(([value, label]) => (
+                    {!reported && [["chat", "Rude or abusive chat"], ["cheating", "Cheating (engine help)"], ["name", "Offensive name"], ["picture", "Offensive picture"], ["stalling", "Stalling or leaving games"]].map(([value, label]) => (
                       <Menu.Item key={value} onClick={() => o.report(oppGuest, value).then(() => setReported(true)).catch((e) => useOnline.setState({ error: e.message }))}>{label}</Menu.Item>
                     ))}
                   </Menu.Dropdown>

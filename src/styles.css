@@ -123,6 +123,12 @@ cg-board square.hl-blue { background-color: rgba(60, 120, 230, .5); }
 .strip { display: flex; align-items: center; gap: 8px; height: 30px; flex: none; }
 .dot { width: 12px; height: 12px; border-radius: 50%; border: 1px solid #888; flex: none; }
 .dot.white { background: #fff; } .dot.black { background: #1c1c1c; }
+/* Profile pictures; in a game, a ring in the player's colour takes the dot's place. */
+.player-pic { border-radius: 50%; object-fit: cover; flex: none; display: block; background: var(--bg-raised); }
+.player-pic.ring-white { box-shadow: 0 0 0 2px #fff, 0 0 0 3px #888; }
+.player-pic.ring-black { box-shadow: 0 0 0 2px #1c1c1c, 0 0 0 3px #888; }
+.pic-wrap { position: relative; display: inline-flex; flex: none; }
+.pic-wrap .presence { position: absolute; right: -1px; bottom: -1px; width: 12px; height: 12px; border: 2px solid var(--mantine-color-body); }
 .clock { font: 600 16px ui-rounded, system-ui; font-variant-numeric: tabular-nums; padding: 2px 10px; border-radius: 6px; background: var(--bg-raised); transition: background .2s, transform .2s; }
 .clock.active { background: var(--accent); color: #fff; transform: scale(1.04); }
 .clock.low { background: #d03a3a; }

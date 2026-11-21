@@ -4,7 +4,7 @@ import fs from "node:fs";
 import { WebSocket } from "ws";
 import { checks, loadServer, until, wait } from "./harness.mjs";
 
-const { call, db, livePath } = await loadServer();
+const { api, call, db, livePath } = await loadServer();
 const { ok, section, done } = checks();
 
 // Lichess is stubbed: a token "lichess:<name>" signs in as <name>.
@@ -504,6 +504,31 @@ ok(prof.name && prof.ratings.bullet && prof.recent.length > 0, "a profile has ra
 ok(prof.trophies.some((t) => t.kind === "arena" && t.rank <= 3), "and trophies from arenas");
 const ppage = await call(`p?id=${A.id}`);
 ok(ppage._type.startsWith("text/html") && ppage.text.includes("Recent games"), "the profile page is served");
+
+// Profile pictures: a 1×1 PNG, and the same bytes claiming to be a JPEG.
+const PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+ok(prof.avatar === null && (await call(`avatar?guest=${A.id}`))._status === 404, "a profile has no picture to begin with");
+ok((await call("avatar", { token: A.token, image: `data:image/jpeg;base64,${PNG}` }))._status === 400, "a picture must be what it says it is");
+ok((await call("avatar", { token: A.token, image: `data:image/svg+xml;base64,${Buffer.from("<svg/>").toString("base64")}` }))._status === 400, "and a JPEG, PNG or WebP (no SVG)");
+ok((await call("avatar", { token: A.token, image: `data:image/jpeg;base64,${Buffer.concat([Buffer.from([0xff, 0xd8, 0xff]), Buffer.alloc(70_000)]).toString("base64")}` }))._status === 400, "and small");
+ok((await call("avatar", { token: "nope", image: `data:image/png;base64,${PNG}` }))._status === 401, "and needs a valid token");
+const setPic = await call("avatar", { token: A.token, image: `data:image/png;base64,${PNG}` });
+ok(setPic.avatar > 0, "a player sets a picture");
+const picRes = await api.GET(new Request(`https://castle.test/api/avatar?guest=${A.id}&v=${setPic.avatar}`));
+ok(picRes.status === 200 && picRes.headers.get("content-type") === "image/png" && Buffer.from(await picRes.arrayBuffer()).equals(Buffer.from(PNG, "base64")) && picRes.headers.get("cache-control").includes("immutable"),
+  "it's served as it was sent, cached for good with its version");
+ok((await call(`profile?guest=${A.id}`)).avatar === setPic.avatar, "the profile gives its version");
+ok((await call(`p?id=${A.id}`)).text.includes(`/api/avatar?guest=${A.id}`), "and the profile page shows it");
+ok((await call("avatar", { token: A.token, image: null })).avatar === null && (await call(`avatar?guest=${A.id}`))._status === 404, "a player removes their picture");
+await call("avatar", { token: A.token, image: `data:image/png;base64,${PNG}` });
+ok((await call("report", { token: B.token, guest: A.id, reason: "picture" })).ok, "a picture can be reported");
+ok((await call("mod/avatar", { key: "wrong", guest: A.id }))._status === 401, "only moderators remove someone's picture");
+await call("mod/avatar", { key: "test-admin-key-123", guest: A.id });
+ok((await call(`avatar?guest=${A.id}`))._status === 404, "and they can");
+const banPic = await guest();
+await call("mod/ban", { key: "test-admin-key-123", guest: banPic.id, days: 1, reason: "test" });
+ok((await call("avatar", { token: banPic.token, image: `data:image/png;base64,${PNG}` }))._status === 403, "a banned player can't change their picture");
+
 const tp = await call("team/page", { token: A.token });
 ok(tp.team?.room?.startsWith(`team:${tp.team.id}:`) && tp.team.members[0].rating && tp.team.battles.length === 1 && tp.team.battles[0].rank === 1, "the team page has members' ratings and its battles");
 await call("chat", { id: tp.team.room, name: "Ann", text: "gg team", token: A.token });

@@ -77,7 +77,7 @@ export interface SimulInfo {
   players: { guest: string; name: string; rating: number | null; game: string | null }[];
 }
 export interface PublicProfile {
-  guest: string; name: string; online: boolean; since: number; ratings: Record<string, { r: number; g: number; p: number }>; rating: number;
+  guest: string; name: string; avatar: number | null; online: boolean; since: number; ratings: Record<string, { r: number; g: number; p: number }>; rating: number;
   games: number; wins: number; draws: number; losses: number; team: string | null;
   trophies: { kind: "arena" | "swiss"; name: string; rank: number; score: number; at: number }[]; recent: GameView[];
 }
@@ -86,6 +86,9 @@ export interface TeamPage extends Team {
   members: { guest: string; name: string; online: boolean; rating: number; category: string | null }[];
   battles: { id: string; name: string; endsAt: number; score: number; rank: number; teams: number }[];
 }
+/** A player's profile picture. `v` (when it last changed) lets it be cached for good. */
+export const avatarUrl = (guest: string, v?: number) => `${ONLINE_API}/avatar?guest=${encodeURIComponent(guest)}${v ? `&v=${v}` : ""}`;
+
 /** Bots' games are marked with a "bot:" guest id. */
 export const isBot = (guest?: string | null) => !!guest && guest.startsWith("bot:");
 const studyListeners = new Set<(id: string) => void>();
@@ -184,6 +187,8 @@ interface State {
   autoReview: boolean;
   friends: Friend[];
   presence: Record<string, boolean>;
+  /** Profile pictures changed on this device (version, or null when removed), so they show at once. */
+  avatars: Record<string, number | null>;
   incoming: Challenge[];
   /** A challenge this player sent and is waiting on. */
   challenging?: { id: string; name: string; game: string };
@@ -276,6 +281,8 @@ interface State {
   testAlert: () => Promise<void>;
   teamPage: () => Promise<TeamPage | null>;
   profileOf: (guest: string) => Promise<PublicProfile>;
+  /** Sets your profile picture (a data URL from shrinkPicture) or removes it (null). */
+  setAvatar: (image: string | null) => Promise<void>;
   setExtraRooms: (rooms: string[]) => void;
   sayToTeam: (room: string, text: string) => Promise<void>;
   setLeaderCategory: (c: string) => void;
@@ -822,6 +829,7 @@ export const useOnline = create<State>((set, get) => {
     autoReview: load("onlineAutoReview", true),
     friends: load<Friend[]>("onlineFriends", []),
     presence: {},
+    avatars: {},
     incoming: [],
     arenas: [],
     races: [],
@@ -1129,6 +1137,12 @@ export const useOnline = create<State>((set, get) => {
     testAlert: async () => { await api("alerts/test", { token: token() }); },
     teamPage: async () => (await api<{ team: TeamPage | null }>("team/page", { token: token() })).team,
     profileOf: (guest) => api<PublicProfile>(`profile?guest=${encodeURIComponent(guest)}`),
+    setAvatar: async (image) => {
+      const id = get().profile?.id;
+      if (!id) throw new Error("Play online once first: your picture goes with your online rating.");
+      const r = await api<{ avatar: number | null }>("avatar", { token: token(), image });
+      set({ avatars: { ...get().avatars, [id]: r.avatar } });
+    },
     setExtraRooms: (extraRooms) => { set({ extraRooms }); sendWatch(); },
     sayToTeam: async (room, text) => { await api("chat", { id: room, name: get().name, text: text.trim(), token: token() }); },
     takeback: () => get().act("takeback"),

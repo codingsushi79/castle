@@ -22,6 +22,7 @@ import { simulRoutes } from "../lib/simul.js";
 import { studyRoutes } from "../lib/study.js";
 import { explorerRoutes } from "../lib/explorer.js";
 import { profileRoutes } from "../lib/profile.js";
+import { avatarRoutes } from "../lib/avatar.js";
 import { open, Profile, randomId, seal } from "../lib/token.js";
 
 /**
@@ -320,15 +321,15 @@ async function rematchSeat(g: Row, seat: Color, b: any) {
 
 const routes: Record<string, Handler> = {
   ...core, ...socialRoutes, ...arenaRoutes, ...swissRoutes, ...raceRoutes, ...legacyRoutes, ...teamRoutes, ...extraRoutes, ...modRoutes,
-  ...botRoutes, ...pushRoutes, ...errorRoutes, ...simulRoutes, ...studyRoutes, ...explorerRoutes, ...profileRoutes,
+  ...botRoutes, ...pushRoutes, ...errorRoutes, ...simulRoutes, ...studyRoutes, ...explorerRoutes, ...profileRoutes, ...avatarRoutes,
 };
 
-/** Things a banned player can't do: start or join games, challenge, chat, enter tournaments or races. */
+/** Things a banned player can't do: start or join games, challenge, chat, enter tournaments or races, change their picture. */
 const BANNED_FROM = new Set([
   "POST games", "POST join", "POST challenge", "POST answer", "POST chat", "POST say", "POST arena/join", "POST arena/pair", "POST arena/create",
   "POST swiss/join", "POST swiss/pair", "POST swiss/create", "POST race/rush", "POST race/storm", "POST race/battle", "POST race/join",
   "POST team/create", "POST team/join", "POST battle", "POST battle/join", "POST rush",
-  "POST simul/create", "POST simul/join", "POST bot/play", "POST study/create",
+  "POST simul/create", "POST simul/join", "POST bot/play", "POST study/create", "POST avatar",
 ]);
 
 async function handle(req: Request): Promise<Response> {
